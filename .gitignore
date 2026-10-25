@@ -1,0 +1,46 @@
+# ── Secrets & Environment ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example          # allow the example template to be committed
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+
+# ── Data corpus (large; not pushed to GitHub — store via LFS/external) ────────
+data/
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# ── ML model artefacts (large binaries, re-downloadable) ─────────────────────
+*.bin
+*.pt
+*.pth
+models/
+.cache/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
