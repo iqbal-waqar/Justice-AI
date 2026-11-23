@@ -1,361 +1,368 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
-    Scale, MessageSquare, CalendarDays, Search, Shield, Zap, BookOpen,
-    ArrowRight, Sparkles, Brain, Database, GraduationCap, Star,
-    ChevronRight, Globe, Lock, BarChart3, Users, Clock, CheckCircle2
+    CalendarClock, MessageSquareText, FolderLock, Wallet, Users, FileSearch, Plus, ShieldCheck, ChevronRight,
+    Receipt, CalendarDays, AlertTriangle, FileText, CheckCircle2, Scale, TrendingUp, Clock, Sparkles, Search, ArrowRight,
 } from 'lucide-react';
+import { apiJson, formatPKR, formatDate, formatBytes } from '../api';
+import { COVERAGE, TOTAL_JUDGMENTS, TOTAL_STATUTES, fmt } from '../data/site';
+import { LanguageToggle, translate as tr, useI18n } from '../i18n';
 
-/* ── Animated counter hook ── */
-function useCounter(end, duration = 2000, startOnView = true) {
-    const [count, setCount] = useState(0);
-    const ref = useRef(null);
-    const started = useRef(false);
-
-    useEffect(() => {
-        if (!startOnView) return;
-        const observer = new IntersectionObserver(([entry]) => {
-            if (entry.isIntersecting && !started.current) {
-                started.current = true;
-                let start = 0;
-                const step = end / (duration / 16);
-                const timer = setInterval(() => {
-                    start += step;
-                    if (start >= end) { setCount(end); clearInterval(timer); }
-                    else setCount(Math.floor(start));
-                }, 16);
-            }
-        }, { threshold: 0.3 });
-        if (ref.current) observer.observe(ref.current);
-        return () => observer.disconnect();
-    }, [end, duration, startOnView]);
-
-    return [count, ref];
-}
-
-/* ── Scroll-reveal hook ── */
-function useReveal() {
-    const ref = useRef(null);
-    const [visible, setVisible] = useState(false);
-    useEffect(() => {
-        const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold: 0.15 });
-        if (ref.current) obs.observe(ref.current);
-        return () => obs.disconnect();
-    }, []);
-    return [ref, visible];
-}
-
-/* ── Floating particles component ── */
-function Particles({ count = 30 }) {
-    const particles = useRef(
-        Array.from({ length: count }, (_, i) => ({
-            id: i,
-            x: Math.random() * 100,
-            y: Math.random() * 100,
-            size: Math.random() * 3 + 1,
-            duration: Math.random() * 20 + 10,
-            delay: Math.random() * 10,
-            opacity: Math.random() * 0.5 + 0.1,
-        }))
-    ).current;
-
+const greeting = () => {
+    const h = new Date().getHours();
+    return h < 12 ? tr('Good morning') : h < 17 ? tr('Good afternoon') : tr('Good evening');
+};
+const todayISO = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const daysUntil = (d) => Math.round((new Date(d + 'T00:00:00') - new Date(todayISO() + 'T00:00:00')) / 86400000);
+const whenLabel = (d) => { const n = daysUntil(d); return n === 0 ? tr('Today') : n === 1 ? tr('Tomorrow') : n < 7 ? tr('In {n} days', { n }) : formatDate(d); };
+// The dashboard's own panel: a white card with a quiet header row.
+function Panel({ title, icon: Icon, action, children, className = '' }) {
     return (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            {particles.map(p => (
-                <div key={p.id} className="absolute rounded-full bg-gold-400"
-                    style={{
-                        left: `${p.x}%`, top: `${p.y}%`,
-                        width: p.size, height: p.size,
-                        opacity: p.opacity,
-                        animation: `float ${p.duration}s ease-in-out ${p.delay}s infinite alternate`,
-                    }} />
-            ))}
-        </div>
+        <section className={`bg-white border border-line rounded-2xl shadow-soft overflow-hidden flex flex-col ${className}`}>
+            <header className="flex items-center justify-between gap-3 px-5 h-14 border-b border-line">
+                <h3 className="flex items-center gap-2.5 text-[14.5px] font-semibold text-ink-950 min-w-0">
+                    <span className="w-7 h-7 rounded-lg bg-paper-200 text-gold-700 flex items-center justify-center flex-shrink-0"><Icon size={14} /></span>
+                    <span className="truncate">{title}</span>
+                </h3>
+                {action}
+            </header>
+            <div className="flex-1 flex flex-col">{children}</div>
+        </section>
+    );
+}
+const PanelLink = ({ to, children }) => (
+    <Link to={to} className="group inline-flex items-center gap-0.5 h-7 px-2 -me-2 rounded-lg text-[12.5px] font-semibold text-slate-500 hover:text-ink-950 hover:bg-paper-200 transition-colors">
+        {children}<ChevronRight size={14} className="rtl:rotate-180 transition-transform group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5" />
+    </Link>
+);
+const Empty = ({ icon: Icon, text, to, cta }) => (
+    <div className="my-auto px-6 py-10 text-center">
+        <span className="mx-auto mb-3 w-12 h-12 rounded-2xl bg-paper-100 ring-1 ring-line flex items-center justify-center">
+            <Icon size={20} className="text-gold-600" strokeWidth={1.8} />
+        </span>
+        <p className="text-[13.5px] text-slate-500">{text}</p>
+        {to && (
+            <Link to={to} className="inline-flex items-center gap-1.5 mt-3 h-8 px-3 rounded-lg text-[13px] font-semibold text-ink-900 bg-paper-100 ring-1 ring-line hover:bg-white hover:ring-ink-200 transition-colors">
+                <Plus size={14} />{cta}
+            </Link>
+        )}
+    </div>
+);
+const Loading = () => <div className="px-5 py-6 space-y-3">{[0, 1, 2].map(i => <div key={i} className="h-4 rounded-md bg-paper-200 animate-pulse" style={{ width: `${85 - i * 15}%` }} />)}</div>;
+
+const KPI_TONES = {
+    ink: { value: 'text-ink-950', chip: 'bg-ink-50 text-ink-700 ring-ink-100', bar: 'bg-ink-700' },
+    red: { value: 'text-red-600', chip: 'bg-red-50 text-red-600 ring-red-100', bar: 'bg-red-500' },
+    green: { value: 'text-emerald-700', chip: 'bg-emerald-50 text-emerald-700 ring-emerald-100', bar: 'bg-emerald-500' },
+    amber: { value: 'text-amber-700', chip: 'bg-amber-50 text-gold-700 ring-amber-100', bar: 'bg-gold-500' },
+};
+function Kpi({ to, icon: Icon, label, value, sub, tone = 'ink' }) {
+    const look = KPI_TONES[tone] || KPI_TONES.ink;
+    return (
+        <Link to={to} className="group relative overflow-hidden rounded-2xl bg-white border border-line shadow-soft p-5 hover:shadow-lift hover:-translate-y-0.5 hover:border-line-strong transition-all duration-200">
+            <span className={`absolute inset-x-0 top-0 h-[3px] ${look.bar} opacity-0 group-hover:opacity-100 transition-opacity`} />
+            <div className="flex items-start justify-between gap-3">
+                <span className="text-[13px] font-medium text-slate-500 leading-snug">{label}</span>
+                <span className={`w-9 h-9 rounded-xl ring-1 flex items-center justify-center flex-shrink-0 ${look.chip}`}><Icon size={16} /></span>
+            </div>
+            <div className={`mt-3 text-[28px] leading-none font-semibold tabular-nums tracking-tight ${look.value}`}>{value}</div>
+            <div className="mt-2.5 flex items-center justify-between gap-2">
+                <span className="text-[12px] text-slate-500 truncate">{sub}</span>
+                <ChevronRight size={14} className="flex-shrink-0 text-slate-300 group-hover:text-ink-700 rtl:rotate-180 transition-colors" />
+            </div>
+        </Link>
     );
 }
 
-/* ── Glowing orb component ── */
-function GlowOrb({ className, color = 'from-indigo-500/20 to-purple-500/10' }) {
-    return <div className={`absolute rounded-full bg-gradient-to-br ${color} blur-3xl animate-pulse-slow ${className}`} />;
+/* The one dark surface on the page: a navy invitation to research. */
+function ResearchCard({ t }) {
+    const topics = [t('Bail under 497 Cr.P.C.'), t('Khula'), t('Writ jurisdiction')];
+    return (
+        <section className="relative overflow-hidden rounded-2xl bg-ink-gradient text-white p-6 shadow-lift">
+            <span aria-hidden className="absolute inset-0 bg-ink-sheen" />
+            <span aria-hidden className="absolute -top-16 -end-16 w-48 h-48 rounded-full bg-gold-400/10 blur-2xl" />
+            <div className="relative">
+                <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-white/[0.07] ring-1 ring-gold-400/30 text-[11px] font-semibold text-gold-300">
+                    <Sparkles size={12} />{t('Ask Justice AI')}
+                </span>
+                <h3 className="page-title text-[22px] leading-snug mt-3.5 text-white">{t('Research any point of law in seconds.')}</h3>
+                <p className="text-[13px] text-white/60 mt-1.5 leading-relaxed">{t('Every answer is cited to the judgment or statute it comes from.')}</p>
+                <Link to="/chat" className="mt-5 flex items-center gap-3 h-11 px-4 rounded-xl bg-white/[0.07] ring-1 ring-white/10 text-[13.5px] text-white/55 hover:bg-white/[0.11] hover:ring-gold-400/40 transition-all">
+                    <Search size={15} className="text-gold-300 flex-shrink-0" />
+                    <span className="flex-1 truncate">{t('Ask a legal question…')}</span>
+                    <span className="w-7 h-7 rounded-lg bg-gold-gradient flex items-center justify-center flex-shrink-0"><ArrowRight size={14} className="text-[#2a1e05] rtl:rotate-180" /></span>
+                </Link>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                    {topics.map(topic => (
+                        <Link key={topic} to="/chat" className="h-7 px-2.5 inline-flex items-center rounded-lg text-[12px] text-white/70 bg-white/[0.04] ring-1 ring-white/10 hover:text-white hover:ring-white/25 transition-colors">{topic}</Link>
+                    ))}
+                </div>
+            </div>
+        </section>
+    );
 }
 
 export default function HomePage() {
     const navigate = useNavigate();
-    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+    const { t, lang } = useI18n();
+    const dateLocale = lang === 'ur' ? 'ur-PK' : 'en-GB';
+    const [hearings, setHearings] = useState(null);
+    const [sessions, setSessions] = useState(null);
+    const [summary, setSummary] = useState(null);
+    const [monthEntries, setMonthEntries] = useState(null);
+    const [vault, setVault] = useState(null);
+    const [docs, setDocs] = useState(null);
+    const [clients, setClients] = useState(null);
+    const [firm, setFirm] = useState(null);
+    const user = (() => { try { return JSON.parse(localStorage.getItem('justiceai_user')) || {}; } catch { return {}; } })();
+    // Greet by first name, skipping a title written into the name ("Adv. Ahmad Mir" → "Ahmad").
+    const nameWords = (user.full_name || '').split(/\s+/).filter(Boolean);
+    const TITLES = /^(adv|advocate|mr|mrs|ms|miss|dr|barrister|justice|ch|chaudhry|syed|hafiz|molana|maulana|rana|mian|malik|sardar|sheikh|khawaja)\.?$/i;
+    const firstName = nameWords.find(w => !TITLES.test(w)) || nameWords[0] || t('Counsel');
 
-    const handleMouseMove = (e) => {
-        const { clientX, clientY } = e;
-        setMousePos({ x: (clientX / window.innerWidth - 0.5) * 20, y: (clientY / window.innerHeight - 0.5) * 20 });
-    };
+    useEffect(() => {
+        // Panels load independently: one slow or failing call never blanks the page.
+        const load = (path, set, fallback = []) => apiJson(path).then(set).catch(() => set(fallback));
+        const monthStart = todayISO().slice(0, 8) + '01';
+        load('/api/v1/hearings', setHearings);
+        load('/api/v1/chat/sessions', setSessions);
+        load('/api/v1/billing/summary', setSummary, undefined);
+        load(`/api/v1/billing/entries?status=approved&date_from=${monthStart}`, setMonthEntries);
+        load('/api/v1/vault/stats', setVault, undefined);
+        load('/api/v1/vault/documents', setDocs);
+        load('/api/v1/clients', setClients);
+        load('/api/v1/firm', setFirm, undefined);
+    }, []);
 
-    const [docs, docsRef] = useCounter(61794, 2500);
-    const [courts, courtsRef] = useCounter(3, 1000);
-    const [accuracy, accuracyRef] = useCounter(97, 2000);
+    // load() substitutes [] for a failed call, so only a real object counts as loaded data.
+    const asObject = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
+    const billing = asObject(summary);
+    const vaultStats = asObject(vault);
+    const firmInfo = asObject(firm);
 
-    const [featRef, featVisible] = useReveal();
-    const [howRef, howVisible] = useReveal();
-    const [courtRef, courtVisible] = useReveal();
-    const [ctaRef, ctaVisible] = useReveal();
+    const upcoming = useMemo(() => (hearings || [])
+        .filter(h => h.status !== 'completed' && daysUntil(h.hearing_date) >= 0)
+        .sort((a, b) => (a.hearing_date + (a.hearing_time || '')).localeCompare(b.hearing_date + (b.hearing_time || ''))), [hearings]);
+    const overdue = (hearings || []).filter(h => h.status !== 'completed' && daysUntil(h.hearing_date) < 0);
+    const soon = upcoming.filter(h => daysUntil(h.hearing_date) <= 1);
+    const thisWeek = upcoming.filter(h => daysUntil(h.hearing_date) <= 7).length;
+    const debtors = (clients || []).filter(c => Number(c.balance) > 0).sort((a, b) => Number(b.balance) - Number(a.balance)).slice(0, 3);
+    const openCases = (clients || []).reduce((n, c) => n + c.matters.filter(m => m.status === 'open').length, 0);
 
-    const features = [
-        { icon: Brain, title: 'AI-Powered Legal Research', desc: 'Ask complex legal questions in plain language. Our hybrid RAG engine searches 61,000+ case law chunks across Supreme Court and High Court databases.', color: 'from-indigo-500 to-purple-600', glow: 'shadow-indigo-500/25' },
-        { icon: Search, title: 'Hybrid Search Engine', desc: 'Combines semantic vector search with keyword matching (BM25) and cross-encoder reranking for the most accurate results.', color: 'from-emerald-500 to-teal-600', glow: 'shadow-emerald-500/25' },
-        { icon: Shield, title: 'Anti-Hallucination Guards', desc: 'Every answer is grounded in actual court documents. If evidence is insufficient, the system tells you honestly.', color: 'from-amber-500 to-orange-600', glow: 'shadow-amber-500/25' },
-        { icon: CalendarDays, title: 'Case Diary & Notes', desc: 'Track hearing dates, add case notes, and set reminders. Never miss a court date again with integrated case management.', color: 'from-pink-500 to-rose-600', glow: 'shadow-pink-500/25' },
-        { icon: Database, title: 'Comprehensive Database', desc: 'Access judgments from Supreme Court, Islamabad High Court, Lahore High Court, and Federal/Provincial statutes.', color: 'from-sky-500 to-blue-600', glow: 'shadow-sky-500/25' },
-        { icon: Zap, title: 'Conversational Memory', desc: 'Ask follow-up questions naturally. The system remembers your conversation context without re-searching.', color: 'from-violet-500 to-fuchsia-600', glow: 'shadow-violet-500/25' },
-    ];
+    const month = useMemo(() => {
+        const t = { billed: 0, received: 0 };
+        (monthEntries || []).forEach(e => {
+            if (e.entry_type === 'payment') t.received += Number(e.amount);
+            else if (e.entry_type === 'fee' || e.billable) t.billed += Number(e.amount);
+        });
+        return t;
+    }, [monthEntries]);
+    const maxBar = Math.max(month.billed, month.received, 1);
 
-    const steps = [
-        { num: '01', title: 'Ask Your Question', desc: 'Type any legal question in plain Urdu or English — from constitutional law to criminal appeals.', icon: MessageSquare },
-        { num: '02', title: 'AI Retrieves & Analyzes', desc: 'Our hybrid engine searches across 61,000+ legal documents using semantic + keyword search with reranking.', icon: Brain },
-        { num: '03', title: 'Get Cited Answers', desc: 'Receive accurate, citation-backed answers grounded in actual court judgments and statutes.', icon: CheckCircle2 },
-    ];
-
-    const courtData = [
-        { name: 'Supreme Court of Pakistan', cases: '25,000+', icon: '⚖️', color: 'from-amber-500/20 to-amber-600/5', border: 'border-amber-500/30' },
-        { name: 'Islamabad High Court', cases: '18,000+', icon: '🏛️', color: 'from-indigo-500/20 to-indigo-600/5', border: 'border-indigo-500/30' },
-        { name: 'Lahore High Court', cases: '15,000+', icon: '📜', color: 'from-emerald-500/20 to-emerald-600/5', border: 'border-emerald-500/30' },
-        { name: 'Federal & Provincial Laws', cases: '3,700+', icon: '📚', color: 'from-purple-500/20 to-purple-600/5', border: 'border-purple-500/30' },
-    ];
+    const attention = [
+        billing?.awaiting_my_review > 0 && { icon: ShieldCheck, tone: 'amber', text: billing.awaiting_my_review === 1 ? t('1 billing entry needs your approval') : t('{n} billing entries need your approval', { n: billing.awaiting_my_review }), to: '/billing' },
+        ...soon.map(h => ({ icon: CalendarClock, tone: 'amber', text: h.hearing_time ? t('{when}: {title} at {time}', { when: whenLabel(h.hearing_date), title: h.case_title, time: h.hearing_time }) : t('{when}: {title}', { when: whenLabel(h.hearing_date), title: h.case_title }), to: '/diary' })),
+        overdue.length > 0 && { icon: AlertTriangle, tone: 'red', text: overdue.length === 1 ? t('1 past hearing is not marked completed') : t('{n} past hearings are not marked completed', { n: overdue.length }), to: '/diary' },
+        ...debtors.map(c => ({ icon: Wallet, tone: 'ink', text: t('{name} owes {amount}', { name: c.name, amount: formatPKR(c.balance) }), to: `/billing?client=${c.id}` })),
+    ].filter(Boolean).slice(0, 6);
+    const attentionLoaded = hearings !== null && clients !== null && summary !== null;
 
     return (
-        <div className="flex-1 overflow-y-auto bg-[#030712] text-white" onMouseMove={handleMouseMove}>
-
-            {/* ═══════════ HERO SECTION ═══════════ */}
-            <section className="relative min-h-[92vh] flex items-center justify-center overflow-hidden">
-                {/* Background image with overlay */}
-                <div className="absolute inset-0">
-                    <img src="/images/hero-bg.png" alt="" className="w-full h-full object-cover opacity-50" />
-                    <div className="absolute inset-0 bg-gradient-to-b from-[#030712]/60 via-[#030712]/40 to-[#030712]" />
-                </div>
-
-                <Particles count={40} />
-                <GlowOrb className="w-[600px] h-[600px] -top-40 -right-40" color="from-indigo-600/15 to-purple-600/10" />
-                <GlowOrb className="w-[500px] h-[500px] -bottom-32 -left-32" color="from-gold-500/15 to-amber-500/10" />
-
-                {/* Parallax hero icon */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[340px] h-[340px] opacity-15 pointer-events-none"
-                    style={{ transform: `translate(calc(-50% + ${mousePos.x}px), calc(-50% + ${mousePos.y}px))` }}>
-                    <img src="/images/justice-icon.png" alt="" className="w-full h-full object-contain" />
-                </div>
-
-                <div className="relative z-10 max-w-5xl mx-auto text-center px-6">
-                    {/* Animated badge */}
-                    <div className="inline-flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 px-5 py-2.5 rounded-full text-sm font-semibold text-gold-400 mb-8"
-                        style={{ animation: 'fadeIn 0.8s ease-out' }}>
-                        <Sparkles size={16} className="animate-pulse" />
-                        Pakistan's First AI Legal Research Platform
-                    </div>
-
-                    <h1 className="text-5xl sm:text-6xl md:text-8xl font-black tracking-tight leading-[1.05] mb-6"
-                        style={{ animation: 'slideUp 0.8s ease-out 0.2s both' }}>
-                        <span className="text-white">The Future of</span>
-                        <br />
-                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-gold-400 via-amber-400 to-gold-600 drop-shadow-lg">
-                            Legal Intelligence
-                        </span>
-                    </h1>
-
-                    <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed mb-12 font-medium"
-                        style={{ animation: 'slideUp 0.8s ease-out 0.4s both' }}>
-                        Justice AI analyzes 61,000+ judgments from Pakistan's Supreme Court, High Courts, and Federal Statutes
-                        — delivering citation-backed legal answers in seconds.
-                    </p>
-
-                    {/* CTA Buttons */}
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4"
-                        style={{ animation: 'slideUp 0.8s ease-out 0.6s both' }}>
-                        <button onClick={() => navigate('/chat')}
-                            className="group relative flex items-center gap-3 bg-gradient-to-r from-gold-500 to-amber-600 hover:from-gold-400 hover:to-amber-500 text-white px-10 py-4.5 rounded-2xl font-bold text-base shadow-2xl shadow-gold-500/30 hover:-translate-y-1 transition-all duration-300 overflow-hidden">
-                            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                            <MessageSquare size={20} />
-                            Start Legal Research
-                            <ArrowRight size={18} className="group-hover:translate-x-1.5 transition-transform" />
-                        </button>
-                        <button onClick={() => navigate('/diary')}
-                            className="flex items-center gap-3 bg-white/5 hover:bg-white/10 backdrop-blur-xl text-white px-10 py-4.5 rounded-2xl font-bold text-base border border-white/10 hover:border-white/20 shadow-xl hover:-translate-y-1 transition-all duration-300">
-                            <CalendarDays size={20} />
-                            Open Case Diary
-                        </button>
-                    </div>
-
-                    {/* Scroll indicator */}
-                    <div className="mt-16 flex flex-col items-center gap-2 text-slate-500 text-xs font-medium"
-                        style={{ animation: 'fadeIn 1s ease-out 1.2s both' }}>
-                        <span>Scroll to explore</span>
-                        <div className="w-5 h-8 rounded-full border-2 border-slate-600 flex justify-center pt-1.5">
-                            <div className="w-1 h-2 bg-gold-400 rounded-full animate-bounce" />
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            {/* ═══════════ STATS BAR ═══════════ */}
-            <section className="relative py-12 border-y border-white/5 bg-white/[0.02] backdrop-blur-xl">
-                <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 px-6">
-                    {[
-                        { ref: docsRef, val: docs.toLocaleString(), label: 'Legal Documents', suffix: '+' },
-                        { ref: courtsRef, val: courts, label: 'Courts Covered', suffix: '' },
-                        { ref: accuracyRef, val: accuracy, label: 'Accuracy Rate', suffix: '%' },
-                        { ref: null, val: '24/7', label: 'Availability', suffix: '' },
-                    ].map((s, i) => (
-                        <div key={i} ref={s.ref} className="text-center group">
-                            <div className="text-4xl md:text-5xl font-black bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-400 group-hover:from-gold-400 group-hover:to-amber-400 transition-all duration-500">
-                                {s.val}{s.suffix}
-                            </div>
-                            <div className="text-sm text-slate-500 font-medium mt-2 uppercase tracking-wider">{s.label}</div>
-                        </div>
-                    ))}
-                </div>
-            </section>
-
-            {/* ═══════════ FEATURES GRID ═══════════ */}
-            <section ref={featRef} className="relative px-6 py-24 overflow-hidden">
-                <GlowOrb className="w-[500px] h-[500px] top-20 -right-40" color="from-purple-600/10 to-indigo-600/5" />
-
-                <div className="max-w-6xl mx-auto">
-                    <div className={`text-center mb-16 transition-all duration-1000 ${featVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-                        <div className="inline-flex items-center gap-2 text-gold-400 text-sm font-bold uppercase tracking-widest mb-4">
-                            <BarChart3 size={16} /> Core Capabilities
-                        </div>
-                        <h2 className="text-4xl md:text-5xl font-black text-white mb-5">
-                            Everything You Need for
-                            <br />
-                            <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">Legal Research</span>
-                        </h2>
-                        <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-                            Built specifically for Pakistani lawyers and legal professionals with cutting-edge AI technology.
+        <div className="relative flex-1 overflow-y-auto bg-paper-100">
+            {/* soft warm wash behind the greeting */}
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(70%_100%_at_15%_0%,rgba(212,168,83,0.10),transparent_70%)]" />
+            <div className="relative max-w-[1200px] mx-auto px-6 lg:px-8 py-8 space-y-7">
+                {/* greeting */}
+                <div className="flex flex-wrap items-end justify-between gap-5">
+                    <div className="min-w-0">
+                        <p className="flex items-center gap-2 text-[12.5px] font-medium text-slate-500">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gold-500" />
+                            {new Date().toLocaleDateString(dateLocale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                            {firmInfo?.name && <><span className="text-slate-300">/</span><span className="text-ink-700">{firmInfo.name}</span></>}
                         </p>
+                        <h1 className="page-title text-[34px] leading-tight text-ink-950 mt-1.5">{greeting()}, {firstName}</h1>
+                        <p className="text-[14px] text-slate-500 mt-1">{t('Here is your practice at a glance.')}</p>
                     </div>
+                    <div className="flex items-center gap-2">
+                        <Link to="/diary" className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-white border border-line-strong text-sm font-semibold text-ink-900 shadow-soft hover:border-ink-300 hover:bg-paper-50 transition-colors"><Plus size={15} />{t('Add hearing')}</Link>
+                        <Link to="/chat" className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-ink-900 text-white text-sm font-semibold shadow-[0_1px_2px_rgba(11,18,32,0.25),inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-ink-800 transition-colors"><MessageSquareText size={15} className="text-gold-300" />{t('New research')}</Link>
+                        <span className="w-px h-6 bg-line mx-1 hidden sm:block" />
+                        <LanguageToggle />
+                    </div>
+                </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {features.map((f, i) => (
-                            <div key={i}
-                                className={`group relative p-7 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-white/15 hover:bg-white/[0.06] backdrop-blur-sm transition-all duration-500 cursor-default hover:-translate-y-2 hover:shadow-2xl ${f.glow} ${featVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
-                                style={{ transitionDelay: `${i * 100}ms` }}>
-                                {/* Hover glow */}
-                                <div className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${f.color} opacity-0 group-hover:opacity-5 transition-opacity duration-500`} />
-                                <div className={`relative w-14 h-14 rounded-2xl bg-gradient-to-br ${f.color} flex items-center justify-center mb-5 shadow-lg ${f.glow} group-hover:scale-110 group-hover:rotate-3 transition-all duration-500`}>
-                                    <f.icon size={26} className="text-white" />
-                                </div>
-                                <h3 className="relative text-lg font-bold text-white mb-2 group-hover:text-gold-400 transition-colors">{f.title}</h3>
-                                <p className="relative text-sm text-slate-400 leading-relaxed">{f.desc}</p>
+                {/* KPIs */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Kpi to="/diary" icon={CalendarClock} label={t('Hearings this week')} value={hearings === null ? '—' : thisWeek}
+                        sub={upcoming[0] ? t('Next: {when}', { when: whenLabel(upcoming[0].hearing_date) }) : t('Nothing scheduled')} tone={soon.length ? 'amber' : 'ink'} />
+                    <Kpi to="/billing" icon={TrendingUp} label={t('Outstanding fees')} value={billing ? formatPKR(billing.outstanding) : '—'}
+                        sub={billing ? t('{amount} received this month', { amount: formatPKR(billing.received_this_month) }) : t('Approved entries only')} tone={billing && Number(billing.outstanding) > 0 ? 'red' : 'ink'} />
+                    <Kpi to="/billing" icon={ShieldCheck} label={t('Awaiting your approval')} value={billing ? (billing.awaiting_my_review ?? 0) : '—'}
+                        sub={billing ? t('{n} pending in the firm', { n: billing.pending_count ?? 0 }) : t('Maker-checker')} tone={billing?.awaiting_my_review ? 'amber' : 'green'} />
+                    <Kpi to="/clients" icon={Users} label={t('Clients')} value={clients === null ? '—' : clients.length}
+                        sub={clients ? (openCases === 1 ? t('1 open case') : t('{n} open cases', { n: openCases })) : t('Clients & cases')} />
+                </div>
+
+                {/* agenda + research + attention */}
+                <div className="grid lg:grid-cols-3 gap-6 items-start">
+                    <Panel title={t('Upcoming hearings')} icon={CalendarDays} className="lg:col-span-2 lg:row-span-2 self-stretch" action={<PanelLink to="/diary">{t('Case diary')}</PanelLink>}>
+                        {hearings === null ? <Loading /> : upcoming.length === 0 ? (
+                            <Empty icon={CalendarClock} text={t('No upcoming hearings.')} to="/diary" cta={t('Add a hearing')} />
+                        ) : (
+                            <ol className="divide-y divide-line">
+                                {upcoming.slice(0, 6).map(h => {
+                                    const n = daysUntil(h.hearing_date);
+                                    const d = new Date(h.hearing_date + 'T00:00:00');
+                                    const near = n <= 1;
+                                    return (
+                                        <li key={h.id}>
+                                            <Link to="/diary" className="flex items-center gap-4 px-5 py-3.5 hover:bg-paper-50 transition-colors">
+                                                <div className={`w-[52px] flex-shrink-0 text-center rounded-xl overflow-hidden ring-1 ${near ? 'ring-amber-200' : 'ring-line'}`}>
+                                                    <div className={`text-[10px] font-bold uppercase tracking-wider py-0.5 ${near ? 'bg-gold-500 text-white' : 'bg-ink-900 text-gold-300'}`}>{d.toLocaleDateString(dateLocale, { month: 'short' })}</div>
+                                                    <div className={`text-[19px] font-bold leading-none py-1.5 tabular-nums ${near ? 'bg-amber-50 text-gold-700' : 'bg-white text-ink-950'}`}>{d.getDate()}</div>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div dir="auto" className="text-[14px] font-semibold text-ink-950 truncate text-start">{h.case_title}</div>
+                                                    <div className="text-[12.5px] text-slate-500 truncate mt-0.5">{[h.court, h.hearing_time, h.case_number].filter(Boolean).join(' · ') || '—'}</div>
+                                                </div>
+                                                <span className={`inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap ring-1 ring-inset ${near ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-paper-100 text-slate-600 ring-line'}`}>
+                                                    {near && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}{whenLabel(h.hearing_date)}
+                                                </span>
+                                            </Link>
+                                        </li>
+                                    );
+                                })}
+                            </ol>
+                        )}
+                        {hearings !== null && upcoming.length > 0 && (
+                            <Link to="/diary" className="group mt-auto flex items-center justify-between gap-3 px-5 h-12 border-t border-line bg-paper-50 text-[13px] font-semibold text-slate-600 hover:text-ink-950 hover:bg-paper-100 transition-colors">
+                                <span>{upcoming.length > 6 ? t('{n} more in the case diary', { n: upcoming.length - 6 }) : t('Open the case diary')}</span>
+                                <ArrowRight size={15} className="text-gold-600 rtl:rotate-180 transition-transform group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5" />
+                            </Link>
+                        )}
+                    </Panel>
+
+                    <ResearchCard t={t} />
+
+                    <Panel title={t('Needs your attention')} icon={AlertTriangle}>
+                        {!attentionLoaded ? <Loading /> : attention.length === 0 ? (
+                            <div className="px-5 py-7 flex items-center gap-3">
+                                <span className="w-10 h-10 rounded-xl bg-emerald-50 ring-1 ring-emerald-100 flex items-center justify-center flex-shrink-0"><CheckCircle2 size={19} className="text-emerald-600" /></span>
+                                <p className="text-[13.5px] text-slate-600 leading-snug">{t('All clear — nothing needs you right now.')}</p>
                             </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* ═══════════ HOW IT WORKS ═══════════ */}
-            <section ref={howRef} className="relative px-6 py-24 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-indigo-950/20 to-transparent" />
-
-                <div className="relative max-w-5xl mx-auto">
-                    <div className={`text-center mb-16 transition-all duration-1000 ${howVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-                        <div className="inline-flex items-center gap-2 text-emerald-400 text-sm font-bold uppercase tracking-widest mb-4">
-                            <Clock size={16} /> Simple Process
-                        </div>
-                        <h2 className="text-4xl md:text-5xl font-black text-white mb-5">
-                            How It <span className="bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-teal-400">Works</span>
-                        </h2>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                        {steps.map((s, i) => (
-                            <div key={i}
-                                className={`relative text-center p-8 rounded-2xl bg-white/[0.03] border border-white/[0.06] transition-all duration-700 ${howVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
-                                style={{ transitionDelay: `${i * 200}ms` }}>
-                                <div className="text-6xl font-black text-white/5 absolute top-4 right-6">{s.num}</div>
-                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-emerald-500/20">
-                                    <s.icon size={28} className="text-white" />
-                                </div>
-                                <h3 className="text-xl font-bold text-white mb-3">{s.title}</h3>
-                                <p className="text-sm text-slate-400 leading-relaxed">{s.desc}</p>
-                                {i < 2 && <ChevronRight size={24} className="hidden md:block absolute -right-5 top-1/2 -translate-y-1/2 text-slate-600" />}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* ═══════════ COURTS COVERED ═══════════ */}
-            <section ref={courtRef} className="relative px-6 py-24 overflow-hidden">
-                <div className="absolute inset-0">
-                    <img src="/images/features-bg.png" alt="" className="w-full h-full object-cover opacity-20" />
-                    <div className="absolute inset-0 bg-[#030712]/80" />
+                        ) : (
+                            <ul className="divide-y divide-line">
+                                {attention.map((a, i) => (
+                                    <li key={i}>
+                                        <Link to={a.to} className="group flex items-start gap-3 px-5 py-3 hover:bg-paper-50 transition-colors">
+                                            <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${a.tone === 'red' ? 'bg-red-50 text-red-500' : a.tone === 'amber' ? 'bg-amber-50 text-gold-700' : 'bg-ink-50 text-ink-600'}`}><a.icon size={14} /></span>
+                                            <span className="flex-1 text-[13px] text-ink-900 leading-snug pt-1">{a.text}</span>
+                                            <ChevronRight size={14} className="mt-1.5 text-slate-300 group-hover:text-ink-700 rtl:rotate-180 flex-shrink-0" />
+                                        </Link>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </Panel>
                 </div>
 
-                <div className="relative max-w-5xl mx-auto">
-                    <div className={`text-center mb-16 transition-all duration-1000 ${courtVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-                        <div className="inline-flex items-center gap-2 text-amber-400 text-sm font-bold uppercase tracking-widest mb-4">
-                            <Globe size={16} /> Coverage
-                        </div>
-                        <h2 className="text-4xl md:text-5xl font-black text-white mb-5">
-                            Courts & <span className="bg-clip-text text-transparent bg-gradient-to-r from-gold-400 to-amber-400">Databases</span>
-                        </h2>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                        {courtData.map((c, i) => (
-                            <div key={i}
-                                className={`group relative p-6 rounded-2xl bg-gradient-to-br ${c.color} border ${c.border} hover:scale-[1.03] transition-all duration-500 cursor-default ${courtVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
-                                style={{ transitionDelay: `${i * 150}ms` }}>
-                                <div className="flex items-center gap-4">
-                                    <div className="text-4xl">{c.icon}</div>
-                                    <div>
-                                        <h3 className="text-lg font-bold text-white">{c.name}</h3>
-                                        <p className="text-sm text-slate-400 mt-1"><span className="text-gold-400 font-bold">{c.cases}</span> indexed documents</p>
+                {/* money + documents + research history */}
+                <div className="grid lg:grid-cols-3 gap-6">
+                    <Panel title={t('This month')} icon={Receipt} action={<PanelLink to="/billing">{t('Billing')}</PanelLink>}>
+                        {monthEntries === null ? <Loading /> : (
+                            <div className="px-5 py-5 space-y-5">
+                                {[[t('Fees & expenses billed'), month.billed, 'bg-ink-gradient'], [t('Payments received'), month.received, 'bg-gradient-to-r from-emerald-500 to-emerald-400']].map(([l, v, c]) => (
+                                    <div key={l}>
+                                        <div className="flex items-baseline justify-between mb-2">
+                                            <span className="text-[13px] text-slate-500">{l}</span>
+                                            <span className="text-[15px] font-semibold tabular-nums text-ink-950">{formatPKR(v)}</span>
+                                        </div>
+                                        <div className="h-2 rounded-full bg-paper-200 overflow-hidden">
+                                            <div className={`h-full rounded-full ${c} transition-all duration-500`} style={{ width: `${Math.max((v / maxBar) * 100, v > 0 ? 4 : 0)}%` }} />
+                                        </div>
                                     </div>
-                                </div>
+                                ))}
+                                <p className="text-[11.5px] text-slate-400 leading-relaxed border-t border-line pt-3">{t('Approved entries dated this month. Pending entries count once approved.')}</p>
                             </div>
+                        )}
+                    </Panel>
+
+                    <Panel title={t('Recent documents')} icon={FolderLock} action={<PanelLink to="/vault">{t('Vault')}</PanelLink>}>
+                        {docs === null ? <Loading /> : docs.length === 0 ? (
+                            <Empty icon={FolderLock} text={t('No documents yet.')} to="/vault" cta={t('Upload a document')} />
+                        ) : (
+                            <ul className="divide-y divide-line">
+                                {docs.slice(0, 4).map(d => (
+                                    <li key={d.id} className="flex items-center gap-3 px-5 py-3">
+                                        <span className="w-8 h-8 rounded-lg bg-emerald-50 ring-1 ring-emerald-100 flex items-center justify-center flex-shrink-0"><FileText size={14} className="text-emerald-600" /></span>
+                                        <div className="min-w-0 flex-1">
+                                            <div dir="auto" className="text-[13px] font-medium text-ink-950 truncate text-start">{d.title}</div>
+                                            <div className="text-[11.5px] text-slate-400 truncate">{d.client_name || t('Unfiled')} · <span className="ltr inline-block">{formatBytes(d.size_bytes)}</span></div>
+                                        </div>
+                                    </li>
+                                ))}
+                                {vaultStats && <li className="px-5 py-2.5 text-[11.5px] text-slate-400 bg-paper-50">{t('{n} documents', { n: vaultStats.document_count })} · <span className="ltr inline-block">{formatBytes(vaultStats.total_bytes)}</span> · {t('AES-256 encrypted')}</li>}
+                            </ul>
+                        )}
+                    </Panel>
+
+                    <Panel title={t('Recent research')} icon={MessageSquareText} action={<PanelLink to="/chat">{t('Legal chat')}</PanelLink>}>
+                        {sessions === null ? <Loading /> : sessions.length === 0 ? (
+                            <Empty icon={MessageSquareText} text={t('No research yet.')} to="/chat" cta={t('Ask a question')} />
+                        ) : (
+                            <ul className="divide-y divide-line">
+                                {sessions.slice(0, 4).map(s => (
+                                    <li key={s.id}>
+                                        <button onClick={() => navigate(`/chat?session=${s.id}`)} className="group w-full flex items-center gap-3 text-start px-5 py-3 hover:bg-paper-50 transition-colors">
+                                            <span className="w-8 h-8 rounded-lg bg-ink-50 ring-1 ring-ink-100 flex items-center justify-center flex-shrink-0"><MessageSquareText size={14} className="text-ink-600" /></span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block text-[13px] font-medium text-ink-950 truncate" dir="auto">{s.title}</span>
+                                                <span className="block text-[11.5px] text-slate-400">{s.updated_at ? formatDate(s.updated_at) : ''} · {t('{n} messages', { n: s.message_count })}</span>
+                                            </span>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </Panel>
+                </div>
+
+                {/* quick actions */}
+                <section>
+                    <h3 className="text-[12px] font-semibold uppercase tracking-[0.12em] text-slate-400 mb-3">{t('Quick actions')}</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                        {[
+                            [MessageSquareText, t('Research a point'), '/chat'],
+                            [CalendarClock, t('Add a hearing'), '/diary'],
+                            [Users, t('New client'), '/clients'],
+                            [FolderLock, t('Upload a document'), '/vault'],
+                            [Receipt, t('Record a fee'), '/billing'],
+                            [FileSearch, t('Analyse a PDF'), '/documents'],
+                        ].map(([Icon, label, to]) => (
+                            <Link key={label} to={to} className="group flex flex-col items-start gap-3 p-4 rounded-2xl bg-white border border-line shadow-soft hover:shadow-lift hover:-translate-y-0.5 hover:border-line-strong transition-all duration-200">
+                                <span className="w-9 h-9 rounded-xl bg-paper-200 ring-1 ring-line flex items-center justify-center group-hover:bg-ink-900 group-hover:ring-ink-900 transition-colors">
+                                    <Icon size={16} className="text-ink-700 group-hover:text-gold-300 transition-colors" />
+                                </span>
+                                <span className="text-[13.5px] font-semibold text-ink-950 leading-tight">{label}</span>
+                            </Link>
                         ))}
                     </div>
-                </div>
-            </section>
+                </section>
 
-            {/* ═══════════ CTA SECTION ═══════════ */}
-            <section ref={ctaRef} className="relative px-6 py-28 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-indigo-950/50 via-[#030712] to-purple-950/30" />
-                <Particles count={20} />
-                <GlowOrb className="w-[400px] h-[400px] top-10 left-1/2 -translate-x-1/2" color="from-gold-500/15 to-amber-500/10" />
-
-                <div className={`relative max-w-3xl mx-auto text-center transition-all duration-1000 ${ctaVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-12 scale-95'}`}>
-                    <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-gold-500 to-amber-600 flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-gold-500/30 animate-pulse-slow">
-                        <GraduationCap size={40} className="text-white" />
-                    </div>
-                    <h2 className="text-4xl md:text-5xl font-black text-white mb-5 leading-tight">
-                        Ready to Transform Your<br />
-                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-gold-400 to-amber-400">Legal Practice?</span>
-                    </h2>
-                    <p className="text-slate-400 text-lg mb-10 max-w-xl mx-auto">
-                        Join hundreds of lawyers already using Justice AI for faster, more accurate legal research.
-                    </p>
-                    <button onClick={() => navigate('/chat')}
-                        className="group relative inline-flex items-center gap-3 bg-gradient-to-r from-gold-500 to-amber-600 hover:from-gold-400 hover:to-amber-500 text-white px-12 py-5 rounded-2xl font-bold text-lg shadow-2xl shadow-gold-500/30 hover:-translate-y-1 transition-all duration-300 overflow-hidden">
-                        <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                        <Scale size={22} />
-                        Ask Your First Question
-                        <ArrowRight size={20} className="group-hover:translate-x-1.5 transition-transform" />
-                    </button>
+                {/* coverage footer */}
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3.5 rounded-2xl bg-white/60 border border-line text-[12.5px] text-slate-500">
+                    <span className="flex items-center gap-2 font-semibold text-ink-900"><Scale size={14} className="text-gold-600" />{t('Research covers')}</span>
+                    <span><b className="font-semibold text-ink-900 tabular-nums">{fmt(COVERAGE.judgments.sc)}</b> {t('Supreme Court')}</span>
+                    <span><b className="font-semibold text-ink-900 tabular-nums">{fmt(COVERAGE.judgments.lhc)}</b> {t('Lahore HC')}</span>
+                    <span><b className="font-semibold text-ink-900 tabular-nums">{fmt(COVERAGE.judgments.ihc)}</b> {t('Islamabad HC')}</span>
+                    <span><b className="font-semibold text-ink-900 tabular-nums">{fmt(COVERAGE.judgments.district)}</b> {t('District courts')}</span>
+                    <span><b className="font-semibold text-ink-900 tabular-nums">{fmt(TOTAL_STATUTES)}</b> {t('statutes')}</span>
+                    <span className="ms-auto flex items-center gap-1.5 text-slate-400"><Clock size={12} />{t('{n} judgments', { n: fmt(TOTAL_JUDGMENTS) })}</span>
                 </div>
-            </section>
-
-            {/* ═══════════ FOOTER ═══════════ */}
-            <footer className="px-6 py-10 border-t border-white/5 bg-[#030712]">
-                <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-500 to-amber-600 flex items-center justify-center shadow-lg">
-                            <Scale size={18} className="text-white" />
-                        </div>
-                        <span className="font-extrabold text-white text-lg">Justice<span className="text-gold-400">AI</span></span>
-                        <span className="text-slate-600 text-sm">— AI Legal Intelligence for Pakistan</span>
-                    </div>
-                    <p className="text-sm text-slate-600">
-                        Always verify critical citations. This is an AI-assisted research tool.
-                    </p>
-                </div>
-            </footer>
+            </div>
         </div>
     );
 }

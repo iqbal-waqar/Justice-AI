@@ -1,59 +1,28 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Scale, User, BookOpen, Sparkles, Plus, ArrowDown, Bot, Cpu, Zap, MessageSquare, Trash2 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-
-/* Recursively pull plain text out of React children (for styling flags only). */
-const extractText = (node) => {
-    if (node == null) return '';
-    if (typeof node === 'string' || typeof node === 'number') return String(node);
-    if (Array.isArray(node)) return node.map(extractText).join('');
-    if (node.props && node.props.children) return extractText(node.props.children);
-    return '';
-};
-
-/* ── Custom markdown renderers ──────────────── */
-const mdComponents = {
-    // ... keep same styling
-    table: ({ children }) => (
-        <div className="overflow-x-auto my-4 rounded-xl border border-white/10 shadow-lg shadow-black/20">
-            <table className="w-full text-sm border-collapse">{children}</table>
-        </div>
-    ),
-    thead: ({ children }) => <thead className="bg-white/5 border-b border-white/10">{children}</thead>,
-    th: ({ children }) => <th className="text-left px-4 py-2.5 text-xs font-bold text-slate-400 uppercase tracking-wider">{children}</th>,
-    td: ({ children }) => <td className="px-4 py-2.5 border-t border-white/5 text-slate-300 text-[13px] leading-relaxed">{children}</td>,
-    tr: ({ children }) => <tr className="hover:bg-white/[0.03] transition-colors">{children}</tr>,
-    blockquote: ({ children }) => (
-        <blockquote className="my-3 border-l-[3px] border-gold-400/70 bg-gold-500/5 rounded-r-xl px-4 py-3 text-[13px] text-slate-300 leading-relaxed not-italic">{children}</blockquote>
-    ),
-    h3: ({ children }) => <h3 className="flex items-center gap-2 text-[15px] font-extrabold text-white mt-5 mb-2 pb-1.5 border-b border-white/10">{children}</h3>,
-    h4: ({ children }) => {
-        const text = extractText(children).trim();
-        const isCaseCard = /^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text);
-        return <h4 className={`text-[13.5px] font-bold mt-4 mb-1.5 ${isCaseCard ? 'text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-3 py-2' : 'text-slate-200'}`}>{children}</h4>;
-    },
-    strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
-    p: ({ children }) => <p className="my-1.5 leading-relaxed">{children}</p>,
-    ul: ({ children }) => <ul className="my-2 space-y-1 list-disc list-outside pl-5 text-[13px]">{children}</ul>,
-    ol: ({ children }) => <ol className="my-2 space-y-1 list-decimal list-outside pl-5 text-[13px]">{children}</ol>,
-    li: ({ children }) => <li className="leading-relaxed text-slate-300">{children}</li>,
-    hr: () => <hr className="my-4 border-white/10" />,
-    a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer" className="text-gold-400 hover:text-gold-300 underline decoration-gold-500/30 underline-offset-2 font-medium transition-colors">{children}</a>,
-    code: ({ inline, children }) => inline ? <code className="bg-white/10 text-gold-300 px-1.5 py-0.5 rounded text-[12px] font-mono">{children}</code> : <code className="block bg-black/40 text-slate-200 rounded-xl p-4 my-3 text-[12px] overflow-x-auto font-mono border border-white/5">{children}</code>,
-};
+import { useSearchParams } from 'react-router-dom';
+import { apiFetch, SessionExpiredError, isUrduText, getAnswerLang, setAnswerLang } from '../api';
+import { ArrowDown, Gavel, HeartHandshake, MessageSquare, PenSquare, ScrollText, ShieldAlert, Trash2 } from 'lucide-react';
+import { AssistantMessage, AssistantThinking, Composer, UserMessage } from '../components/chat';
+import { LogoMark } from '../components/Logo';
+import { LanguageToggle, useI18n } from '../i18n';
 
 export default function ChatPage() {
+    const { t, lang } = useI18n();
     const [query, setQuery] = useState('');
     const [chat, setChat] = useState([]);
-    const [isTyping, setIsTyping] = useState(false);
+    const [isTyping, setIsTyping] = useState(false);   // waiting for the first status / token
+    const [busy, setBusy] = useState(false);           // a question is being answered
     const [showScrollBtn, setShowScrollBtn] = useState(false);
-    
+    // Answer language: 'en' answers in English unless the question is typed in Urdu
+    // script; 'ur' always answers in Urdu. Remembered per browser.
+    const [answerLang, setAnswerLangState] = useState(getAnswerLang());
+    const changeAnswerLang = (lang) => { setAnswerLangState(lang); setAnswerLang(lang); };
+
     // History State
     const [sessions, setSessions] = useState([]);
     const [activeSessionId, setActiveSessionId] = useState(null);
     const token = localStorage.getItem('justiceai_token');
-    
+
     const chatEndRef = useRef(null);
     const chatContainerRef = useRef(null);
     const inputRef = useRef(null);
@@ -61,7 +30,7 @@ export default function ChatPage() {
     const fetchSessions = async () => {
         if (!token) return;
         try {
-            const res = await fetch('http://localhost:8000/api/v1/chat/sessions', {
+            const res = await apiFetch('/api/v1/chat/sessions', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -72,7 +41,19 @@ export default function ChatPage() {
     };
 
     useEffect(() => { fetchSessions(); }, [token]);
-    useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chat, isTyping]);
+
+    // Deep links from the dashboard: /chat?session=12 opens a conversation,
+    // /chat?q=... pre-fills a question.
+    const [searchParams, setSearchParams] = useSearchParams();
+    useEffect(() => {
+        const sid = Number(searchParams.get('session'));
+        const q = searchParams.get('q');
+        if (sid) loadSession(sid);
+        if (q) setQuery(q);
+        if (sid || q) setSearchParams({}, { replace: true });
+    }, []);
+    // Follow the answer as it streams, unless the reader has scrolled up to read.
+    useEffect(() => { if (!showScrollBtn) chatEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' }); }, [chat, isTyping]);
     useEffect(() => { inputRef.current?.focus(); }, []);
 
     const handleScroll = () => {
@@ -82,7 +63,7 @@ export default function ChatPage() {
     };
 
     const scrollToBottom = () => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    
+
     const handleNewChat = () => { setActiveSessionId(null); setChat([]); setQuery(''); inputRef.current?.focus(); };
 
     const loadSession = async (id) => {
@@ -90,7 +71,7 @@ export default function ChatPage() {
         setChat([]);
         setIsTyping(true); // show loading state briefly
         try {
-            const res = await fetch(`http://localhost:8000/api/v1/chat/sessions/${id}/messages`, {
+            const res = await apiFetch(`/api/v1/chat/sessions/${id}/messages`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -105,11 +86,11 @@ export default function ChatPage() {
         } catch(e) { console.error('Error loading session:', e); }
         finally { setIsTyping(false); inputRef.current?.focus(); }
     };
-    
+
     const deleteSession = async (e, id) => {
         e.stopPropagation();
         try {
-            await fetch(`http://localhost:8000/api/v1/chat/sessions/${id}`, {
+            await apiFetch(`/api/v1/chat/sessions/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -127,20 +108,34 @@ export default function ChatPage() {
         return copy;
     });
 
+    // Append a live research step to the most recent AI message (skips duplicates).
+    const appendStep = (step) => setChat(prev => {
+        const copy = [...prev];
+        for (let i = copy.length - 1; i >= 0; i--) {
+            if (copy[i].type === 'ai') {
+                const steps = copy[i].steps || [];
+                if (steps[steps.length - 1] !== step) copy[i] = { ...copy[i], steps: [...steps, step] };
+                break;
+            }
+        }
+        return copy;
+    });
+
     const handleSearch = async (e) => {
         e.preventDefault();
-        if (!query.trim() || isTyping) return;
+        if (!query.trim() || busy) return;
         const userMessage = { type: 'user', text: query, time: new Date() };
         const priorChat = chat; // snapshot for conversation history (before adding this turn)
         setChat(prev => [...prev, userMessage]);
         const currentQuery = query;
         setQuery('');
         setIsTyping(true);
+        setBusy(true);
 
         let pSessionId = activeSessionId;
         if (!pSessionId && token) {
             try {
-                const sRes = await fetch('http://localhost:8000/api/v1/chat/sessions', {
+                const sRes = await apiFetch('/api/v1/chat/sessions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify({ title: "New Chat" })
@@ -154,7 +149,7 @@ export default function ChatPage() {
             } catch (error) { console.error('Failed to create session:', error); }
         }
         if (pSessionId && token) {
-            fetch(`http://localhost:8000/api/v1/chat/sessions/${pSessionId}/messages`, {
+            apiFetch(`/api/v1/chat/sessions/${pSessionId}/messages`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ role: 'user', content: currentQuery })
@@ -171,7 +166,7 @@ export default function ChatPage() {
             if (!started) {
                 started = true;
                 setIsTyping(false);  // drop the typing dots; the streaming bubble takes over
-                setChat(prev => [...prev, { type: 'ai', text: '', sources: [], time: new Date() }]);
+                setChat(prev => [...prev, { type: 'ai', text: '', sources: [], steps: [], time: new Date(), streaming: true }]);
             }
         };
 
@@ -179,13 +174,13 @@ export default function ChatPage() {
         let finalText = '';
         let mappedSources = [];
         try {
-            const response = await fetch('http://localhost:8000/api/v1/chat/stream', {
+            const response = await apiFetch('/api/v1/chat/stream', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     ...(token ? { 'Authorization': `Bearer ${token}` } : {})
                 },
-                body: JSON.stringify({ query: currentQuery, conversation_history: history, filters: null })
+                body: JSON.stringify({ query: currentQuery, conversation_history: history, filters: null, language: answerLang === 'ur' ? 'ur' : 'auto' })
             });
             if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
 
@@ -207,7 +202,7 @@ export default function ChatPage() {
                         try { ev = JSON.parse(payload); } catch { continue; }
                         if (ev.type === 'status') {
                             ensureAi();
-                            if (!streamedText) updateLastAi({ text: `*${ev.content}*` });
+                            appendStep(ev.content);
                         } else if (ev.type === 'token') {
                             ensureAi();
                             streamedText += ev.content;
@@ -220,243 +215,232 @@ export default function ChatPage() {
                             ensureAi();
                             const uniq = new Set();
                             mappedSources = (ev.sources || [])
-                                .map(src => ({ name: (src.title || src.judge_name || src.court || 'Legal Document').substring(0, 70), court: src.court || '', year: src.year || '', pdf_url: src.pdf_url || '' }))
+                                .map(src => ({ name: (src.title || src.judge_name || src.court || t('Legal document')).substring(0, 70), court: src.court || '', year: src.year || '', pdf_url: src.pdf_url || '' }))
                                 .filter(s => { if (uniq.has(s.name)) return false; uniq.add(s.name); return true; })
-                                .slice(0, 5);
+                                .slice(0, 8);
                             updateLastAi({ sources: mappedSources });
                         } else if (ev.type === 'error') {
                             ensureAi();
-                            finalText = '⚠️ ' + (ev.message || 'Error generating the response.');
+                            finalText = '⚠️ ' + (ev.message || t('Error generating the response.'));
                             updateLastAi({ text: finalText });
                         }
                     }
                 }
             }
 
-            const answerText = finalText || streamedText || 'No response received.';
+            const answerText = finalText || streamedText || t('No response received.');
             if (pSessionId && token) {
-                fetch(`http://localhost:8000/api/v1/chat/sessions/${pSessionId}/messages`, {
+                apiFetch(`/api/v1/chat/sessions/${pSessionId}/messages`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify({ role: 'ai', content: answerText, sources: mappedSources })
                 });
             }
         } catch (error) {
+            if (error instanceof SessionExpiredError) return;  // already redirecting to /login
             console.error('Backend error:', error);
             ensureAi();
-            updateLastAi({ text: '⚠️ **Connection Error.** Please make sure the backend server is running.' });
+            updateLastAi({ text: '⚠️ ' + t('**Connection error.** Please make sure the backend server is running.') });
         } finally {
             setIsTyping(false);
+            setBusy(false);
+            updateLastAi({ streaming: false });
             inputRef.current?.focus();
         }
     };
 
     const handleSuggestion = (text) => { setQuery(text); inputRef.current?.focus(); };
 
-    const suggestions = [
-        { label: 'Bail under 302 PPC', text: 'What are the legal grounds for bail in murder cases under Section 302 PPC?', icon: '⚖️' },
-        { label: 'Article 199 Writs', text: 'What powers does the Islamabad High Court have under Article 199 to issue writs?', icon: '📜' },
-        { label: 'Khula Procedure', text: 'What is the legal procedure for khula and dissolution of marriage in Pakistan?', icon: '💍' },
-        { label: 'FIR Quashment', text: 'Under what circumstances can an FIR be quashed by the High Court?', icon: '🔍' },
+    const suggestionsEn = [
+        { label: 'Bail in a murder case', text: 'What are the legal grounds for bail in murder cases under Section 302 PPC?', icon: Gavel },
+        { label: 'Writ jurisdiction', text: 'What powers does the High Court have under Article 199 to issue writs?', icon: ScrollText },
+        { label: 'Khula procedure', text: 'What is the legal procedure for khula and dissolution of marriage in Pakistan?', icon: HeartHandshake },
+        { label: 'Quashing an FIR', text: 'Under what circumstances can an FIR be quashed by the High Court?', icon: ShieldAlert },
     ];
+    const suggestionsUr = [
+        { label: 'دفعہ 302 میں ضمانت', text: 'قتل کے مقدمے میں دفعہ 302 PPC کے تحت ضمانت بعد از گرفتاری کن بنیادوں پر ملتی ہے؟', icon: Gavel },
+        { label: 'آرٹیکل 199 رٹ', text: 'آرٹیکل 199 کے تحت ہائی کورٹ کون سی رٹ جاری کر سکتی ہے؟', icon: ScrollText },
+        { label: 'خلع کا طریقہ کار', text: 'پاکستان میں خلع اور تنسیخ نکاح کا قانونی طریقہ کار کیا ہے؟', icon: HeartHandshake },
+        { label: 'ایف آئی آر کا اخراج', text: 'ہائی کورٹ کن حالات میں ایف آئی آر ختم کر سکتی ہے؟', icon: ShieldAlert },
+    ];
+    // Urdu questions when the answer language or the interface is Urdu; they are real
+    // questions, so they also go into the box as typed.
+    const suggestUr = answerLang === 'ur' || lang === 'ur';
+    const suggestions = suggestUr ? suggestionsUr : suggestionsEn;
+    const queryIsUrdu = isUrduText(query);
 
     const formatTime = (date) => date?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || '';
 
+    const activeTitle = sessions.find(s => s.id === activeSessionId)?.title;
+    const empty = chat.length === 0 && !isTyping;
+    const ur = answerLang === 'ur';
+
+    // Conversation list grouped by when it was last used.
+    const groupOf = (s) => {
+        const when = new Date(s.updated_at || s.created_at || 0);
+        if (Number.isNaN(when.getTime()) || when.getTime() === 0) return 'recent';
+        const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+        const days = (startOfToday - when) / 86400000;
+        if (days <= 0) return 'today';
+        if (days <= 1) return 'yesterday';
+        if (days <= 7) return 'week';
+        return 'older';
+    };
+    const groupLabels = { today: t('Today'), yesterday: t('Yesterday'), week: t('Previous 7 days'), older: t('Older'), recent: t('Recent') };
+    const grouped = ['today', 'yesterday', 'week', 'older', 'recent']
+        .map(key => ({ key, items: sessions.filter(s => groupOf(s) === key) }))
+        .filter(g => g.items.length);
+
+    const languageToggle = (
+        <div role="radiogroup" aria-label={t('Answer language')} title={t('Language of the answer')}
+            className="flex items-center gap-0.5 p-0.5 rounded-full bg-paper-100 ring-1 ring-inset ring-line">
+            {[{ key: 'en', label: 'English' }, { key: 'ur', label: 'اردو' }].map(opt => (
+                <button key={opt.key} type="button" role="radio" aria-checked={answerLang === opt.key}
+                    onClick={() => changeAnswerLang(opt.key)}
+                    className={`px-3 h-7 rounded-full text-[12.5px] font-semibold transition-all ${opt.key === 'ur' ? 'urdu-input leading-none' : ''}
+                        ${answerLang === opt.key ? 'bg-white text-ink-950 shadow-soft ring-1 ring-line' : 'text-slate-500 hover:text-ink-950'}`}>
+                    {opt.label}
+                </button>
+            ))}
+        </div>
+    );
+
+    const composer = (
+        <Composer value={query} onChange={setQuery} onSubmit={handleSearch} disabled={busy} inputRef={inputRef}
+            urdu={queryIsUrdu || (ur && !query)} voiceLanguage={answerLang} left={languageToggle}
+            placeholder={ur ? 'اپنا قانونی سوال اردو یا انگریزی میں لکھیں…' : t('Ask a legal question in English or اردو…')}
+            footer={t('Justice AI cites real judgments, but it can make mistakes. Read the cited judgment before relying on it.')} />
+    );
+
     return (
-        <div className="flex-1 flex h-full bg-[#0a0f1e] overflow-hidden w-full">
-            {/* ── Sidebar (History) ── */}
-            <div className="hidden md:flex flex-col w-72 border-r border-white/5 bg-[#0a0f1e]/80 backdrop-blur-xl shrink-0">
-                <div className="p-4 border-b border-white/5">
+        <div className="flex-1 flex h-full bg-white overflow-hidden w-full">
+            {/* ── Conversation history ── */}
+            <aside className="hidden md:flex flex-col w-[272px] border-e border-line bg-paper-50 shrink-0">
+                <div className="h-[72px] px-4 flex items-center border-b border-line flex-shrink-0">
                     <button onClick={handleNewChat}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gold-500/30 text-sm font-semibold text-gold-400 hover:bg-gold-500/10 hover:border-gold-500/50 transition-all">
-                        <Plus size={16} /> New Conversation
+                        className="w-full flex items-center gap-2.5 px-3.5 h-10 rounded-xl bg-ink-900 text-white text-[13.5px] font-semibold shadow-[0_1px_2px_rgba(11,18,32,0.25),inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-ink-800 transition-colors">
+                        <PenSquare size={15} className="text-gold-300" />
+                        <span className="flex-1 text-start">{t('New chat')}</span>
                     </button>
                 </div>
-                
-                <div className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-hide">
+                <div className="flex-1 overflow-y-auto px-3 py-3 scrollbar-hide">
                     {sessions.length === 0 ? (
-                        <div className="text-center text-slate-500 text-xs mt-6 p-4">
-                            No chat history yet. Start a conversation!
+                        <div className="mx-1 mt-2 p-4 rounded-2xl border border-dashed border-line-strong text-center">
+                            <MessageSquare size={18} className="mx-auto text-slate-300 mb-2" />
+                            <p className="text-slate-500 text-[12.5px] leading-relaxed">{t('Your conversations will appear here.')}</p>
                         </div>
-                    ) : (
-                        sessions.map(s => (
-                            <div key={s.id} 
-                                onClick={() => loadSession(s.id)}
-                                className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border
-                                    ${activeSessionId === s.id 
-                                        ? 'bg-white/10 border-white/20' 
-                                        : 'bg-transparent border-transparent hover:bg-white/5 hover:border-white/10'}`}>
-                                <div className="flex items-center gap-3 overflow-hidden">
-                                    <MessageSquare size={16} className={activeSessionId === s.id ? 'text-gold-400' : 'text-slate-500'} />
-                                    <div className="flex flex-col overflow-hidden">
-                                        <span className={`text-[13px] font-medium truncate w-40 ${activeSessionId === s.id ? 'text-white' : 'text-slate-300'}`}>
-                                            {s.title}
-                                        </span>
-                                    </div>
-                                </div>
-                                <button className="opacity-0 hover:opacity-100 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 transition-all"
-                                    onClick={(e) => deleteSession(e, s.id)}>
-                                    <Trash2 size={14} />
-                                </button>
+                    ) : grouped.map(group => (
+                        <div key={group.key} className="mb-4">
+                            <div className="px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{groupLabels[group.key]}</div>
+                            <div className="space-y-0.5">
+                                {group.items.map(s => {
+                                    const active = activeSessionId === s.id;
+                                    return (
+                                        <div key={s.id} onClick={() => loadSession(s.id)}
+                                            className={`group relative flex items-center gap-2 ps-3 pe-1.5 h-10 rounded-xl cursor-pointer transition-all
+                                                ${active ? 'bg-white text-ink-950 shadow-soft ring-1 ring-line' : 'text-slate-600 hover:bg-paper-200/70 hover:text-ink-950'}`}>
+                                            {active && <span className="absolute start-0 top-2.5 bottom-2.5 w-[3px] rounded-e-full bg-gold-500" />}
+                                            <span dir="auto" className={`flex-1 truncate text-start text-[13.5px] ${active ? 'font-semibold' : ''}`}>{s.title}</span>
+                                            <button title={t('Delete conversation')} aria-label={t('Delete conversation')} onClick={(e) => deleteSession(e, s.id)}
+                                                className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all">
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        ))
-                    )}
+                        </div>
+                    ))}
                 </div>
-            </div>
+            </aside>
 
-            {/* ── Main Chat Area ── */}
+            {/* ── Conversation ── */}
             <div className="flex-1 flex flex-col h-full min-w-0">
-                {/* ── Chat Header ── */}
-                <div className="flex items-center justify-between px-6 h-[68px] border-b border-white/5 bg-[#0a0f1e]/80 backdrop-blur-xl flex-shrink-0">
-                    <div className="flex items-center gap-3">
-                        <div className="relative">
-                            <div className="absolute inset-0 bg-gold-400/20 blur-lg rounded-xl animate-pulse-slow" />
-                            <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-gold-500 to-amber-600 flex items-center justify-center shadow-lg shadow-gold-500/20">
-                                <Scale size={20} className="text-white" />
-                            </div>
+                <header className="flex items-center justify-between gap-3 px-6 h-[72px] border-b border-line bg-white/85 backdrop-blur-xl flex-shrink-0 z-10">
+                    <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="relative w-10 h-10 rounded-xl bg-ink-gradient flex items-center justify-center flex-shrink-0 shadow-[0_6px_16px_-6px_rgba(11,18,32,0.55)] ring-1 ring-white/5">
+                            <span className="absolute inset-0 rounded-xl bg-ink-sheen" />
+                            <MessageSquare size={18} className="relative text-gold-300" />
                         </div>
-                        <div>
-                            <h2 className="text-sm font-bold text-white">Justice AI Legal Chat</h2>
-                            <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse" />
-                                Hybrid RAG Engine Active — {chat.filter(m => m.type === 'user').length} queries
-                            </p>
+                        <div className="min-w-0">
+                            <h1 className="page-title text-[21px] leading-tight text-ink-950 truncate" dir={activeTitle ? 'auto' : undefined}>{activeTitle || t('Legal research')}</h1>
+                            <p className="text-[13px] text-slate-500 truncate mt-0.5">{t('Answers grounded in Pakistani judgments and statutes')}</p>
                         </div>
                     </div>
-                </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <button onClick={handleNewChat} className="md:hidden inline-flex items-center gap-1.5 px-3 h-9 rounded-xl border border-line-strong bg-white text-[13px] font-semibold text-ink-950 shadow-soft">
+                            <PenSquare size={14} /> {t('New chat')}
+                        </button>
+                        <span className="w-px h-6 bg-line mx-1 hidden sm:block" />
+                        <LanguageToggle />
+                    </div>
+                </header>
 
-                {/* ── Messages Area ── */}
-                <div ref={chatContainerRef} onScroll={handleScroll}
-                    className="flex-1 overflow-y-auto px-4 md:px-6 py-6 relative scrollbar-hide">
-
-                    {chat.length === 0 && !isTyping ? (
-                        <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center animate-fade-in">
-                            <div className="relative mb-8">
-                                <div className="absolute inset-0 bg-gold-400/15 blur-3xl rounded-full scale-150 animate-pulse-slow" />
-                                <div className="relative w-24 h-24 rounded-3xl bg-gradient-to-br from-[#111827] to-[#1a1f35] border border-white/10 shadow-2xl flex items-center justify-center">
-                                    <Scale size={48} className="text-gold-400" />
-                                </div>
+                {empty ? (
+                    /* ── Start screen: greeting, composer, suggestions ── */
+                    <div className="relative flex-1 overflow-y-auto">
+                        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(60%_70%_at_50%_0%,rgba(212,168,83,0.13)_0%,rgba(250,249,246,0.6)_45%,transparent_75%)]" />
+                        <div className="relative min-h-full flex flex-col items-center justify-center px-4 py-12">
+                            <div className="relative mb-7">
+                                <span aria-hidden className="absolute -inset-3 rounded-[22px] bg-gold-400/20 blur-xl" />
+                                <span className="relative block"><LogoMark size={56} /></span>
                             </div>
-                            <h2 className="font-display text-3xl md:text-4xl font-extrabold text-white mb-3">How can I <span className="text-gradient-gold">help</span> you today?</h2>
-                            <p className="text-slate-500 text-base mb-10 max-w-md">
-                                Ask any legal question about Pakistani law. I'll search through Supreme Court, High Court judgments and Federal Statutes.
+                            <span className="inline-flex items-center gap-2 h-7 px-3 rounded-full bg-white ring-1 ring-line shadow-soft text-[12px] font-semibold text-ink-800 mb-4">
+                                <span className="w-1.5 h-1.5 rounded-full bg-gold-500" />
+                                {t('Every answer cites the judgment it came from')}
+                            </span>
+                            <h1 className={`page-title ${lang === 'ur' ? 'text-[1.7rem] sm:text-[2rem]' : 'text-[2.1rem] sm:text-[2.6rem] leading-[1.15]'} text-ink-950 mb-3 text-center max-w-2xl`}>
+                                {t('What would you like to research?')}
+                            </h1>
+                            <p className="text-slate-500 text-[15px] leading-relaxed mb-9 text-center max-w-xl">
+                                {t('Answers come from judgments of the Supreme Court, the Lahore and Islamabad High Courts and Punjab district courts, and from federal and Punjab statutes, with every source linked.')}
                             </p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-                                {suggestions.map((s, i) => (
-                                    <button key={i} onClick={() => handleSuggestion(s.text)}
-                                        className="text-left p-5 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-gold-500/30 hover:bg-white/[0.06] hover:-translate-y-1 hover:shadow-xl hover:shadow-gold-500/5 transition-all duration-300 group">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <span className="text-lg">{s.icon}</span>
-                                            <span className="text-sm font-bold text-white group-hover:text-gold-400 transition-colors">{s.label}</span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 leading-relaxed">{s.text}</p>
-                                    </button>
-                                ))}
+                            {composer}
+                            <div className="w-full max-w-3xl mt-9">
+                                <div className="text-[11.5px] font-semibold uppercase tracking-[0.12em] text-slate-400 mb-3 px-1">{t('Try asking')}</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {suggestions.map((s, i) => (
+                                        <button key={i} onClick={() => handleSuggestion(s.text)} dir={suggestUr ? 'rtl' : 'ltr'}
+                                            className={`${suggestUr ? 'text-right urdu-input' : 'text-left'} group flex items-start gap-3.5 p-4 rounded-2xl border border-line bg-white shadow-soft hover:border-gold-400/60 hover:shadow-lift hover:-translate-y-0.5 transition-all duration-200`}>
+                                            <span className="w-9 h-9 rounded-xl bg-paper-200 ring-1 ring-inset ring-line flex items-center justify-center flex-shrink-0 transition-colors group-hover:bg-ink-900 group-hover:ring-ink-900">
+                                                <s.icon size={16} className="text-gold-700 group-hover:text-gold-300 transition-colors" />
+                                            </span>
+                                            <span className="min-w-0">
+                                                <span className="block text-[14px] font-semibold text-ink-950">{s.label}</span>
+                                                <span className="block text-[13px] leading-relaxed text-slate-500 mt-0.5">{s.text}</span>
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
-                    ) : (
-                        <div className="max-w-3xl mx-auto space-y-6 pb-4">
-                            {chat.map((msg, idx) => (
-                                <div key={idx} className={`chat-msg flex gap-3 ${msg.type === 'user' ? 'flex-row-reverse' : ''}`}>
-                                    <div className={`w-9 h-9 rounded-xl flex-shrink-0 flex items-center justify-center mt-1 shadow-lg
-                                        ${msg.type === 'user'
-                                            ? 'bg-gradient-to-br from-indigo-500 to-purple-600 shadow-indigo-500/20'
-                                            : 'bg-gradient-to-br from-gold-500 to-amber-600 shadow-gold-500/20'}`}>
-                                        {msg.type === 'user' ? <User size={16} className="text-white" /> : <Scale size={16} className="text-white" />}
-                                    </div>
-
-                                    <div className={`flex flex-col max-w-[85%] ${msg.type === 'user' ? 'items-end' : 'items-start'}`}>
-                                        <div className={`text-[13px] font-semibold mb-1.5 flex items-center gap-2
-                                            ${msg.type === 'user' ? 'text-slate-500' : 'text-gold-400'}`}>
-                                            {msg.type === 'user' ? 'You' : 'Justice AI'}
-                                            <span className="text-[11px] text-slate-600 font-normal">{formatTime(msg.time)}</span>
-                                        </div>
-
-                                        <div className={`px-5 py-4 rounded-2xl text-[14px] leading-relaxed
-                                            ${msg.type === 'user'
-                                                ? 'bg-gradient-to-r from-indigo-600 to-purple-700 text-white rounded-tr-md shadow-lg shadow-indigo-500/10'
-                                                : 'bg-white/[0.04] border border-white/[0.08] text-slate-300 rounded-tl-md shadow-lg shadow-black/20 prose prose-invert max-w-none prose-sm'}`}>
-                                            {msg.type === 'ai' ? (
-                                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{msg.text}</ReactMarkdown>
-                                            ) : msg.text}
-                                        </div>
-
-                                        {msg.sources && msg.sources.length > 0 && (
-                                            <div className="mt-2.5 space-y-1.5">
-                                                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                                    <BookOpen size={11} className="text-gold-400" /> Sources
-                                                </span>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {msg.sources.map((src, sIdx) => (
-                                                        <a key={sIdx} href={src.pdf_url || '#'} target="_blank" rel="noreferrer"
-                                                            className="inline-flex items-center gap-1 bg-gold-500/10 border border-gold-500/20 text-gold-400 text-[11px] font-semibold px-2.5 py-1 rounded-lg hover:bg-gold-500/20 hover:border-gold-500/30 transition-all cursor-pointer">
-                                                            {src.name}
-                                                            {src.year && <span className="text-gold-600">({src.year})</span>}
-                                                        </a>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-
-                            {isTyping && (
-                                <div className="flex gap-3 animate-fade-in">
-                                    <div className="w-9 h-9 rounded-xl flex-shrink-0 flex items-center justify-center mt-1 shadow-lg bg-gradient-to-br from-gold-500 to-amber-600 shadow-gold-500/20">
-                                        <Scale size={16} className="text-white" />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-[13px] font-semibold text-gold-400 mb-1.5">Justice AI</span>
-                                        <div className="bg-white/[0.04] border border-white/[0.08] px-5 py-4 rounded-2xl rounded-tl-md shadow-lg flex items-center gap-2">
-                                            <div className="w-2 h-2 bg-gold-400 rounded-full typing-dot" />
-                                            <div className="w-2 h-2 bg-gold-400 rounded-full typing-dot" />
-                                            <div className="w-2 h-2 bg-gold-400 rounded-full typing-dot" />
-                                            <span className="text-xs text-slate-500 ml-2 font-medium flex items-center gap-1.5">
-                                                <Cpu size={12} className="animate-spin" /> Processing...
-                                            </span>
-                                        </div>
-                                    </div>
+                    </div>
+                ) : (
+                    <>
+                        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto relative">
+                            <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-10 pb-12 space-y-10">
+                                {chat.map((msg, idx) => msg.type === 'user'
+                                    ? <UserMessage key={idx} text={msg.text} />
+                                    : <AssistantMessage key={idx} text={msg.text} steps={msg.steps} sources={msg.sources}
+                                        time={formatTime(msg.time)} done={!msg.streaming} />)}
+                                {isTyping && <AssistantThinking label={busy ? t('Reading your question') : t('Opening conversation')} />}
+                                <div ref={chatEndRef} />
+                            </div>
+                            {showScrollBtn && (
+                                <div className="sticky bottom-3 h-0 flex justify-center z-20">
+                                    <button onClick={scrollToBottom} aria-label={t('Scroll to latest')}
+                                        className="-translate-y-full w-10 h-10 bg-white ring-1 ring-line rounded-full shadow-lift flex items-center justify-center hover:bg-paper-50 transition-colors">
+                                        <ArrowDown size={17} className="text-ink-900" />
+                                    </button>
                                 </div>
                             )}
-                            <div ref={chatEndRef} />
                         </div>
-                    )}
-
-                    {showScrollBtn && (
-                        <button onClick={scrollToBottom}
-                            className="fixed bottom-28 right-8 w-10 h-10 bg-white/10 backdrop-blur-xl border border-white/10 rounded-full shadow-lg flex items-center justify-center hover:bg-white/15 transition-all z-20 animate-fade-in">
-                            <ArrowDown size={18} className="text-gold-400" />
-                        </button>
-                    )}
-                </div>
-
-                {/* ── Input Area ── */}
-                <div className="px-4 md:px-6 py-5 bg-[#0a0f1e]/80 backdrop-blur-xl border-t border-white/5 flex-shrink-0 z-10 relative">
-                    <div className="max-w-3xl mx-auto">
-                        <form onSubmit={handleSearch} className="relative flex items-center">
-                            <div className="flex-1 relative group">
-                                <div className="absolute -inset-0.5 bg-gradient-to-r from-gold-500/20 via-amber-500/10 to-gold-500/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition-opacity duration-500" />
-                                <input ref={inputRef} type="text" value={query} onChange={(e) => setQuery(e.target.value)}
-                                    placeholder="Ask a legal question..."
-                                    className="relative w-full bg-white/[0.04] text-white py-4 pl-5 pr-14 rounded-2xl border border-white/[0.08] focus:border-gold-500/40 focus:ring-2 focus:ring-gold-500/10 focus:outline-none placeholder:text-slate-600 font-medium text-[14.5px] transition-all" />
-                                <button type="submit" disabled={!query.trim() || isTyping}
-                                    className="btn-sheen absolute right-2 top-1/2 -translate-y-1/2 p-3 rounded-xl transition-all duration-300
-                                        disabled:opacity-20 disabled:cursor-not-allowed
-                                        bg-gold-gradient text-[#2a1e05] shadow-glow-gold hover:scale-105">
-                                    <Send size={16} />
-                                </button>
-                            </div>
-                        </form>
-                        <div className="flex items-center justify-between mt-3 px-1">
-                            <span className="text-[11px] text-slate-600 font-medium flex items-center gap-1.5">
-                                <Sparkles size={11} className="text-gold-500" />
-                                Powered by Hybrid RAG + Groq LLM
-                            </span>
-                            <span className="text-[11px] text-slate-600">Always verify critical citations</span>
+                        <div className="relative px-4 sm:px-6 pb-4 pt-2 flex-shrink-0 bg-white">
+                            <div aria-hidden className="pointer-events-none absolute inset-x-0 -top-10 h-10 bg-gradient-to-t from-white to-white/0" />
+                            {composer}
                         </div>
-                    </div>
-                </div>
+                    </>
+                )}
             </div>
         </div>
     );

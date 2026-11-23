@@ -36,14 +36,11 @@ def is_judge_type(doc_type: str) -> bool:
 def is_law_type(doc_type: str) -> bool:
     return doc_type.endswith("_law") or doc_type in ("federal_law", "punjab_law")
 
-def is_case_type(doc_type: str) -> bool:
-    return not is_judge_type(doc_type) and not is_law_type(doc_type)
-
-
 COURT_MAP = {
     "sc_case": "Supreme Court of Pakistan",
     "isb_case": "Islamabad High Court",
     "lhc_case": "Lahore High Court",
+    "district_case": "District Courts (Punjab)",
     "federal_law": "Federal Legislature",
     "punjab_law": "Punjab Legislature",
     "sc_judge": "Supreme Court of Pakistan",
@@ -142,9 +139,39 @@ def _law_metadata(record: Dict[str, Any], doc_type: str) -> Dict[str, Any]:
     }
 
 
+# Courts whose scraped judge records carry no per-judge page link: their public
+# list of judges, so a judge source still opens the court's own record.
+JUDGE_LIST_PAGES = {"lhc_judge": "https://www.lhc.gov.pk/judges"}
+# The Lahore High Court loads each judge's biography from this address (by the
+# court's judge id); it also works as a direct link.
+LHC_JUDGE_BIO_URL = "https://data.lhc.gov.pk/dynamic/jbiodata.php?name={judge_id}"
+
+
+def _judge_profile_url(record: Dict[str, Any], doc_type: str) -> str:
+    if record.get("profile_url"):
+        return str(record["profile_url"]).strip()
+    if doc_type == "lhc_judge":
+        # Numeric ids are the court's own; ids like "judge226" were made up by the
+        # scraper for former judges, so those open the matching list of judges.
+        if str(record.get("judge_id") or "").isdigit():
+            return LHC_JUDGE_BIO_URL.format(judge_id=record["judge_id"])
+        designation = str(record.get("designation") or "").lower()
+        if _norm_status(str(record.get("status") or "")) == "FORMER" or designation.startswith("former"):
+            page = "former_chief_justices" if "chief justice" in designation else "former_judges"
+        else:
+            page = "sitting_judges"
+        return f"https://data.lhc.gov.pk/judges/{page}"
+    return JUDGE_LIST_PAGES.get(doc_type, "")
+
+
 def _judge_metadata(record: Dict[str, Any], doc_type: str) -> Dict[str, Any]:
     name = _first(record, "full_name", "name", "judge_name") or "Unknown Judge"
-    source_id = _first(record, "judge_id", "id") or name
+    # Point IDs derive from source_id, and the scraped LHC file reuses judge_id
+    # across different judges — relying on it alone silently overwrote 11 judges.
+    # Combine the id with a name slug so every judge gets distinct points.
+    raw_id = _first(record, "judge_id", "id")
+    name_slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    source_id = f"{raw_id}-{name_slug}" if raw_id else name_slug
     designation = _first(record, "designation")
     image_url = _first(record, "profile_photo_url", "image_url")
     is_chief = bool(record.get("is_chief_justice", False)) or "chief justice" in designation.lower()
@@ -160,6 +187,7 @@ def _judge_metadata(record: Dict[str, Any], doc_type: str) -> Dict[str, Any]:
         "is_chief_justice": is_chief,
         "image_url": image_url,
         "date_of_appointment": _first(record, "date_of_appointment", "date_of_elevation"),
+        "profile_url": _judge_profile_url(record, doc_type),
     }
 
 
@@ -204,6 +232,45 @@ def _context_header(meta: Dict[str, Any], doc_type: str) -> str:
     return f"[{tag}] " + " | ".join(b for b in bits if b)
 
 
+_JUDGE_TITLE_WORDS = {
+    "mr", "mrs", "ms", "miss", "dr", "justice", "chief", "honourable", "hon", "ble",
+    "syed", "sheikh", "malik", "chaudhry", "ch", "mian", "sardar", "khan", "muhammad",
+    "mohammad", "ahmad", "ahmed", "ali", "shah", "the",
+}
+
+
+def bio_matches_judge(name: str, body: str) -> bool:
+    """True when the biography text actually refers to this judge.
+
+    The scraped LHC source has ~54% of bios attached to the wrong person
+    (politicians, actors, unrelated Wikipedia articles). A genuine bio mentions
+    the judge's own distinctive name tokens early on; a wrong one never does.
+    """
+    if not body:
+        return False
+    tokens = [t for t in re.split(r"[^a-z]+", (name or "").lower()) if len(t) > 3 and t not in _JUDGE_TITLE_WORDS]
+    if not tokens:
+        return True  # nothing distinctive to check against — don't discard
+    head = body.lower()[:800]
+    if any(t in head for t in tokens):
+        return True
+    # Older LHC entries are terse career CVs ("Called to the Bar, 1899; Enrolled
+    # as Advocate…") that never repeat the name but are genuinely the judge's.
+    cv_markers = ("called to the bar", "enrolled as advocate", "enrolled as an advocate",
+                  "elevated", "chief judge", "joined civil service", "joined indian civil service",
+                  "joined the bar", "practised", "practiced", "judge, chief court", "puisne judge",
+                  "barrister-at-law", "barrister at law", "advocate, lahore high court")
+    if any(m in head for m in cv_markers):
+        return True
+    # CVs open with a verb/role ("was born on…", "Joined…"); a wrong Wikipedia
+    # article opens with someone else's NAME ("Asif Ali Zardari (born 26 July…").
+    lead = re.sub(r"^[\s,;:.\-]+", "", head)[:40]
+    cv_openers = ("was born", "born on", "born in", "born at", "joined", "called to", "enrolled",
+                  "advocate", "barrister", "judge,", "educated", "graduated", "obtained",
+                  "passed", "appointed", "elevated", "did his", "completed", "studied")
+    return lead.startswith(cv_openers)
+
+
 def _judge_profile_chunk(meta: Dict[str, Any], body: str) -> str:
     parts = [f"JUDGE PROFILE: {meta['judge_name']}"]
     if meta.get("court"):
@@ -234,6 +301,11 @@ def build_chunks(record: Dict[str, Any], doc_type: str) -> List[Dict[str, Any]]:
     splitter = chunking_service.get_text_splitter()
     texts: List[str] = []
     if is_judge:
+        # Quarantine biographies that belong to someone else: keep only the
+        # structured profile header (name, court, designation, status, CJ flag).
+        if body and not bio_matches_judge(meta.get("judge_name", ""), body):
+            print(f"  🧹 Dropping mismatched bio for {meta.get('judge_name')!r}: {body[:60]!r}…")
+            body = ""
         texts.append(_judge_profile_chunk(meta, body))
         if body:
             for piece in splitter.split_text(body):

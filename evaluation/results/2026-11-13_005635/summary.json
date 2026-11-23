@@ -1,0 +1,31 @@
+{
+  "run_id": "2026-11-13_005635",
+  "judge_model": "gpt-4.1-mini",
+  "embedding_model": "text-embedding-3-small",
+  "scored_at": "2026-11-13T01:04:14",
+  "questions": 5,
+  "metrics": {
+    "faithfulness": {
+      "mean": 1.0,
+      "n": 5
+    },
+    "answer_relevancy": {
+      "mean": 0.8473,
+      "n": 5
+    },
+    "context_precision": {
+      "mean": 1.0,
+      "n": 5
+    },
+    "context_recall": {
+      "mean": 1.0,
+      "n": 5
+    },
+    "factual_correctness": {
+      "mean": 0.678,
+      "n": 5
+    }
+  },
+  "label": "first test",
+  "avg_seconds": 11.05
+}

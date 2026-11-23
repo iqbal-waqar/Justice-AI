@@ -3,17 +3,14 @@ from typing import Optional
 from enum import Enum
 
 class DocumentType(str, Enum):
-    # ── Court Cases ──────────────────────────────────────────────────────────
     LHC_CASE = "lhc_case"
     LHC_DISTRICT = "lhc_district"
     SC_CASE = "sc_case"
     ISB_CASE = "isb_case"
-    # ── Judge Profiles ───────────────────────────────────────────────────────
     LHC_JUDGE = "lhc_judge"
     LHC_JUDGE_NEW = "lhc_judge_new"
     SC_JUDGE = "sc_judge"
     ISB_JUDGE = "isb_judge"
-    # ── Statutes & Laws ──────────────────────────────────────────────────────
     FEDERAL_LAW = "federal_law"
     PUNJAB_LAW = "punjab_law"
 

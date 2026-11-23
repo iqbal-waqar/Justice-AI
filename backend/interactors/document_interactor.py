@@ -2,6 +2,7 @@ import os
 import uuid
 
 from fastapi import HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from backend.database.models import DocumentRepository
@@ -46,7 +47,8 @@ class DocumentInteractor:
         )
 
         try:
-            result = document_processor_service.process_and_store_document(
+            result = await run_in_threadpool(
+                document_processor_service.process_and_store_document,
                 file_path=file_path,
                 user_id=user_id,
                 qdrant_doc_id=qdrant_doc_id,
@@ -110,8 +112,8 @@ class DocumentInteractor:
 
         context_parts = []
         for index, item in enumerate(results, 1):
-            context_parts.append(f"[Chunk {index} | score={item['score']:.3f}]\\n{item['content']}")
-        context = "\\n\\n---\\n\\n".join(context_parts)
+            context_parts.append(f"[Passage {index}]\n{item['content']}")
+        context = "\n\n---\n\n".join(context_parts)
 
         from backend.services.llm import llm_service
 
@@ -131,7 +133,8 @@ RULES:
 2. Quote specific text from the document when relevant.
 3. Be precise and thorough.
 4. Use markdown formatting for readability.
-5. If the document discusses legal provisions, cite them accurately from the text."""
+5. If the document discusses legal provisions, cite them accurately from the text.
+6. Reply in the language of the user's question: if it is written in Urdu, answer in formal Urdu (Nastaliq script), keeping names, citations and section numbers in English with Western digits."""
 
         try:
             response = llm.invoke(prompt)

@@ -4,3 +4,7 @@ from .documents import *
 from .hearings import *
 from .health import *
 from .ingest import *
+from .notes import *
+from .practice import *
+from .library import *
+from .portal import *

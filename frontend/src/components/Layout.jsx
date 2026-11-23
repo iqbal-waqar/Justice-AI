@@ -1,143 +1,149 @@
-import React, { useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Outlet, NavLink, Link, useNavigate } from 'react-router-dom';
 import {
-    Scale, Home, MessageSquare, CalendarDays, ChevronLeft, ChevronRight,
-    LogOut, FileUp
+    Home, MessageSquare, CalendarDays, ChevronsLeft, ChevronsRight,
+    LogOut, FileUp, Users, FolderLock, Wallet, UsersRound, Library
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { clearSession, profilePictureUrl } from '../api';
+import Logo from './Logo';
+import { useI18n } from '../i18n';
 
+const COLLAPSE_KEY = 'justiceai_sidebar_collapsed';
+
+/* App shell: a deep-navy sidebar that carries the brand (gold for the active
+   page), and the light paper canvas where each page renders. */
 export default function Layout() {
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    // On phones and small tablets the sidebar starts as the narrow icon rail so pages keep their width.
+    const isSmall = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches;
+    const [sidebarOpen, setSidebarOpen] = useState(() => {
+        if (isSmall()) return false;
+        try { return localStorage.getItem(COLLAPSE_KEY) !== '1'; } catch { return true; }
+    });
+    useEffect(() => {
+        const mq = window.matchMedia('(max-width: 900px)');
+        const onChange = (e) => { if (e.matches) setSidebarOpen(false); };
+        mq.addEventListener('change', onChange);
+        return () => mq.removeEventListener('change', onChange);
+    }, []);
+    const { t } = useI18n();
     const navigate = useNavigate();
 
-    const stored = localStorage.getItem('justiceai_user');
-    const user = stored ? JSON.parse(stored) : null;
-    const initials = user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
-    const profilePicUrl = user?.profile_picture?.startsWith('http')
-        ? user.profile_picture
-        : user?.profile_picture ? `${API}${user.profile_picture}` : null;
+    const toggleSidebar = () => setSidebarOpen(open => {
+        try { localStorage.setItem(COLLAPSE_KEY, open ? '1' : '0'); } catch { /* private mode */ }
+        return !open;
+    });
 
-    const navItems = [
-        { to: '/', icon: Home, label: 'Home', desc: 'Dashboard' },
-        { to: '/chat', icon: MessageSquare, label: 'Legal Chat', desc: 'AI Research' },
-        { to: '/diary', icon: CalendarDays, label: 'Case Diary', desc: 'Hearings & Notes' },
-        { to: '/documents', icon: FileUp, label: 'Documents', desc: 'Upload & Analyze' },
+    const readUser = () => { try { return JSON.parse(localStorage.getItem('justiceai_user')) || null; } catch { return null; } };
+    const [user, setUser] = useState(readUser);
+    // Refresh the name and photo when the profile page changes them.
+    useEffect(() => {
+        const onUpdate = () => setUser(readUser());
+        window.addEventListener('justiceai:user-updated', onUpdate);
+        return () => window.removeEventListener('justiceai:user-updated', onUpdate);
+    }, []);
+    const initials = user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
+    const profilePicUrl = profilePictureUrl(user?.profile_picture);
+
+    const sections = [
+        {
+            title: t('Research'), items: [
+                { to: '/dashboard', icon: Home, label: t('Dashboard') },
+                { to: '/chat', icon: MessageSquare, label: t('Legal research') },
+                { to: '/documents', icon: FileUp, label: t('Document analysis') },
+                { to: '/library', icon: Library, label: t('Law library') },
+            ],
+        },
+        {
+            title: t('Practice'), items: [
+                { to: '/diary', icon: CalendarDays, label: t('Case diary') },
+                { to: '/clients', icon: Users, label: t('Clients & cases') },
+                { to: '/vault', icon: FolderLock, label: t('Document vault') },
+                { to: '/billing', icon: Wallet, label: t('Billing') },
+                { to: '/team', icon: UsersRound, label: t('Team') },
+            ],
+        },
     ];
 
     const handleLogout = () => {
-        localStorage.removeItem('justiceai_token');
-        localStorage.removeItem('justiceai_user');
+        clearSession();
         navigate('/login');
     };
 
     return (
-        <div className="h-screen flex bg-primary-950 text-white overflow-hidden">
+        <div className="h-screen flex bg-paper-100 text-slate-800 overflow-hidden">
             {/* ─── Sidebar ─── */}
-            <aside
-                className={`relative flex flex-col bg-gradient-to-b from-[#0b1022] to-[#070b16] border-r border-white/5 transition-all duration-300 ease-in-out z-30 shadow-[1px_0_30px_-10px_rgba(0,0,0,0.6)]
-          ${sidebarOpen ? 'w-[280px] min-w-[280px]' : 'w-[76px] min-w-[76px]'}`}
-            >
-                {/* top hairline glow */}
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-gold-500/[0.06] to-transparent" />
+            <aside className={`relative flex flex-col bg-ink-gradient text-white transition-[width] duration-200 ease-out z-30
+                ${sidebarOpen ? 'w-[256px] min-w-[256px]' : 'w-[76px] min-w-[76px]'}`}>
+                {/* soft gold glow in the corner, purely decorative */}
+                <span aria-hidden className="pointer-events-none absolute inset-0 bg-ink-sheen" />
 
-                {/* Logo */}
-                <div className="relative flex items-center gap-3 px-5 h-[72px] border-b border-white/5 flex-shrink-0">
-                    <div className="relative flex-shrink-0">
-                        <div className="absolute inset-0 bg-gold-400/30 blur-lg rounded-xl animate-glow-pulse" />
-                        <div className="relative w-10 h-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-glow-gold">
-                            <Scale size={22} className="text-[#2a1e05]" />
-                        </div>
-                    </div>
-                    {sidebarOpen && (
-                        <div className="animate-fade-in">
-                            <h1 className="font-display text-lg font-extrabold tracking-tight leading-none">
-                                Justice<span className="text-gradient-gold">AI</span>
-                            </h1>
-                            <p className="text-[10px] text-slate-400 font-medium tracking-[0.2em] uppercase mt-0.5">Legal Intelligence</p>
-                        </div>
-                    )}
+                <div className={`relative flex items-center h-[72px] flex-shrink-0 ${sidebarOpen ? 'px-5 justify-between' : 'justify-center'}`}>
+                    <Link to="/" title={t('Justice AI website')} className="rounded-xl">
+                        <Logo size={36} light showText={sidebarOpen} />
+                    </Link>
                 </div>
 
-                {/* Navigation */}
-                <nav className="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto scrollbar-hide">
-                    {navItems.map(({ to, icon: Icon, label, desc }) => (
-                        <NavLink
-                            key={to}
-                            to={to}
-                            end={to === '/'}
-                            className={({ isActive }) =>
-                                `group relative flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all duration-200
-                ${isActive
-                                    ? 'bg-gradient-to-r from-gold-500/15 to-transparent text-white'
-                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                                }`
-                            }
-                        >
-                            {({ isActive }) => (
-                                <>
-                                    {/* active accent bar */}
-                                    <span className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full bg-gold-gradient transition-all duration-300 ${isActive ? 'h-7 opacity-100' : 'h-0 opacity-0'}`} />
-                                    <Icon size={20} className={`flex-shrink-0 transition-all group-hover:scale-110 ${isActive ? 'text-gold-400' : ''}`} />
-                                    {sidebarOpen && (
-                                        <div className="flex flex-col animate-fade-in min-w-0">
-                                            <span className="leading-tight">{label}</span>
-                                            <span className={`text-[10.5px] font-normal leading-tight truncate ${isActive ? 'text-gold-400/70' : 'text-slate-600 group-hover:text-slate-500'}`}>{desc}</span>
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                        </NavLink>
+                <nav className="relative flex-1 px-3 pb-4 overflow-y-auto scrollbar-hide">
+                    {sections.map(section => (
+                        <div key={section.title} className="mt-3 first:mt-1">
+                            {sidebarOpen
+                                ? <div className="px-3 pt-3 pb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-white/35">{section.title}</div>
+                                : <div className="mx-4 my-3 border-t border-white/10" />}
+                            <div className="space-y-0.5">
+                                {section.items.map(({ to, icon: Icon, label }) => (
+                                    <NavLink key={to} to={to} end={to === '/dashboard'} title={sidebarOpen ? undefined : label}
+                                        className={({ isActive }) =>
+                                            `group relative flex items-center gap-3 h-10 rounded-xl text-[14px] transition-colors ${sidebarOpen ? 'px-3' : 'justify-center'}
+                                            ${isActive ? 'bg-white/[0.08] text-white font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'text-white/60 font-medium hover:text-white hover:bg-white/[0.05]'}`}>
+                                        {({ isActive }) => (
+                                            <>
+                                                {isActive && <span className="absolute start-0 top-2 bottom-2 w-[3px] rounded-e-full bg-gold-400 shadow-[0_0_12px_rgba(212,168,83,0.7)]" />}
+                                                <Icon size={18} strokeWidth={isActive ? 2.2 : 1.9}
+                                                    className={`flex-shrink-0 transition-colors ${isActive ? 'text-gold-300' : 'text-white/45 group-hover:text-white/80'}`} />
+                                                {sidebarOpen && <span className="truncate">{label}</span>}
+                                            </>
+                                        )}
+                                    </NavLink>
+                                ))}
+                            </div>
+                        </div>
                     ))}
                 </nav>
 
-                {/* Bottom — User Profile */}
-                <div className="px-3 py-4 border-t border-white/5 space-y-1.5">
-                    <NavLink
-                        to="/profile"
-                        className={({ isActive }) =>
-                            `flex items-center gap-3 p-2.5 rounded-2xl text-sm font-medium transition-all duration-200 group cursor-pointer
-                            ${isActive ? 'glass-card' : 'hover:bg-white/5 border border-transparent'}`
-                        }
-                    >
-                        <div className="relative flex-shrink-0">
-                            <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold shadow-lg ring-2 ring-white/10">
-                                {profilePicUrl ? (
-                                    <img src={profilePicUrl} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                    <span className="text-white text-xs">{initials}</span>
-                                )}
-                            </div>
-                            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#070b16]" />
-                        </div>
+                {/* Account */}
+                <div className="relative p-3 border-t border-white/10 space-y-1">
+                    <NavLink to="/profile" title={t('Your profile')}
+                        className={({ isActive }) => `flex items-center gap-3 p-2 rounded-xl transition-colors ${sidebarOpen ? '' : 'justify-center'} ${isActive ? 'bg-white/[0.08]' : 'hover:bg-white/[0.05]'}`}>
+                        <span className="relative w-9 h-9 rounded-full overflow-hidden bg-gold-gradient flex items-center justify-center flex-shrink-0 ring-2 ring-white/10">
+                            {profilePicUrl
+                                ? <img src={profilePicUrl} alt="" className="w-full h-full object-cover" />
+                                : <span className="text-[#2a1e05] text-[12px] font-bold">{initials}</span>}
+                        </span>
                         {sidebarOpen && (
-                            <div className="flex-1 min-w-0 animate-fade-in">
-                                <p className="text-sm font-semibold text-white truncate">{user?.full_name || 'User'}</p>
-                                <p className="text-[11px] text-gold-400/80 font-medium truncate">{user?.email || ''}</p>
-                            </div>
+                            <span className="flex-1 min-w-0">
+                                <span className="block text-[13.5px] font-semibold text-white truncate">{user?.full_name || t('User')}</span>
+                                <span className="block text-[12px] text-white/45 truncate ltr text-start">{user?.email || ''}</span>
+                            </span>
                         )}
                     </NavLink>
-
-                    <button
-                        onClick={handleLogout}
-                        className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all duration-200 group text-slate-400 hover:text-red-400 hover:bg-red-500/10 w-full"
-                    >
-                        <LogOut size={20} className="flex-shrink-0 group-hover:scale-110 group-hover:-translate-x-0.5 transition-transform" />
-                        {sidebarOpen && <span className="animate-fade-in">Logout</span>}
-                    </button>
+                    <div className={`flex items-center gap-1 ${sidebarOpen ? '' : 'flex-col'}`}>
+                        <button onClick={handleLogout} title={t('Log out')}
+                            className={`flex items-center gap-3 h-9 rounded-xl text-[13.5px] font-medium text-white/55 hover:text-red-300 hover:bg-red-500/10 transition-colors ${sidebarOpen ? 'px-3 flex-1' : 'justify-center w-full'}`}>
+                            <LogOut size={17} strokeWidth={1.9} className="flex-shrink-0 rtl:rotate-180" />
+                            {sidebarOpen && <span>{t('Log out')}</span>}
+                        </button>
+                        <button onClick={toggleSidebar} aria-label={sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar')}
+                            title={sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar')}
+                            className={`h-9 rounded-xl flex items-center justify-center text-white/45 hover:text-white hover:bg-white/[0.06] transition-colors ${sidebarOpen ? 'w-9' : 'w-full'}`}>
+                            {sidebarOpen ? <ChevronsLeft size={17} className="rtl:rotate-180" /> : <ChevronsRight size={17} className="rtl:rotate-180" />}
+                        </button>
+                    </div>
                 </div>
-
-                {/* Toggle */}
-                <button
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                    className="absolute -right-3.5 top-20 w-7 h-7 bg-[#0b1022] border border-white/10 rounded-full flex items-center justify-center text-slate-400 hover:text-gold-400 hover:border-gold-500/40 hover:bg-[#12182b] transition-all duration-200 shadow-lg z-40"
-                >
-                    {sidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-                </button>
             </aside>
 
             {/* ─── Main Content ─── */}
-            <main className="flex-1 flex flex-col overflow-hidden bg-[#0a0f1e] rounded-tl-[28px] border-t border-l border-white/[0.06]">
+            <main className="flex-1 flex flex-col overflow-hidden bg-paper-100">
                 <Outlet />
             </main>
         </div>

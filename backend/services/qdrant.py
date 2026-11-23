@@ -33,13 +33,15 @@ class QdrantService:
         self.qdrant_client: QdrantClient | None = None
 
     def get_qdrant_client(self) -> QdrantClient:
-        """Returns Qdrant client for vector database operations."""
+        """Returns Qdrant client for vector database operations.
+
+        The client is cached and returned as-is: its HTTP pool reconnects on its
+        own, so pinging get_collections() on every access only added a full
+        round-trip to Qdrant Cloud per call. Use reset_qdrant_client() to force
+        a fresh connection.
+        """
         if self.qdrant_client is not None:
-            try:
-                self.qdrant_client.get_collections()
-                return self.qdrant_client
-            except Exception:
-                self.qdrant_client = None
+            return self.qdrant_client
 
         qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
         qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
@@ -66,6 +68,11 @@ class QdrantService:
         except Exception as error:
             print(f"✗ Failed to connect to Qdrant: {error}")
             raise
+
+    def reset_qdrant_client(self) -> QdrantClient:
+        """Drop the cached client and reconnect (use after a connection error)."""
+        self.close_qdrant_client()
+        return self.get_qdrant_client()
 
     def close_qdrant_client(self) -> None:
         """Close Qdrant connection."""

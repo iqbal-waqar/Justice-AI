@@ -18,9 +18,12 @@ class Hearing(Base):
     hearing_time = Column(Time, nullable=True)
     notes = Column(Text, nullable=True)
 
-    status = Column(String(20), nullable=False, default="upcoming")  # upcoming | completed | adjourned
+    notify_phone = Column(String(20), nullable=True)
+    matter_id = Column(Integer, ForeignKey("matters.id", ondelete="SET NULL"), nullable=True, index=True)
 
-    reminder_sent = Column(String(20), nullable=True, default=None)  # null | "1day" | "2day"
+    status = Column(String(20), nullable=False, default="upcoming")
+
+    reminder_sent = Column(String(20), nullable=True, default=None)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

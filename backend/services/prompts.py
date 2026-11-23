@@ -1,5 +1,5 @@
 """
-Prompts Service - Shared prompt utilities for Wakeels AI
+Prompts Service - Shared prompt utilities for Justice AI
 
 Note: Main synthesis/refine prompts are defined inline in agent.py.
 This module provides conversation history formatting used by the agent.

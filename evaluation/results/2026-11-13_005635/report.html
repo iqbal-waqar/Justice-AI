@@ -1,0 +1,2352 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Justice AI Evaluation</title>
+<style>
+:root { --ink:#0f1f3d; --ink2:#1f3360; --gold:#b8892b; --bg:#f7f8fa; --card:#fff; --line:#e3e7ee; --muted:#64708a;
+        --good:#15803d; --good-bg:#e7f6ec; --fair:#b45309; --fair-bg:#fdf3e2; --weak:#b91c1c; --weak-bg:#fdecec; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:#1d2433; font:15px/1.55 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+.wrap { max-width:1180px; margin:0 auto; padding:28px 16px 64px; }
+header { background:var(--ink); color:#fff; padding:28px 0; }
+header .wrap { padding-top:0; padding-bottom:0; }
+header h1 { margin:0 0 6px; font:600 28px/1.2 Georgia,"Source Serif 4",serif; }
+header h1 span { color:#e3c27a; }
+.meta { display:flex; flex-wrap:wrap; gap:6px 20px; color:#c9d2e6; font-size:13.5px; }
+.meta b { color:#fff; font-weight:600; }
+h2 { font:600 21px/1.3 Georgia,serif; color:var(--ink); margin:36px 0 14px; }
+h4 { margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
+.card-top { display:flex; justify-content:space-between; align-items:center; }
+.card-label { font-weight:600; color:var(--ink); font-size:14px; }
+.score { font:600 34px/1.1 Georgia,serif; color:var(--ink); margin:10px 0 8px; }
+.bar { height:6px; background:#eef1f6; border-radius:4px; overflow:hidden; }
+.fill { display:block; height:100%; }
+.fill.good { background:var(--good); } .fill.fair { background:var(--fair); } .fill.weak { background:var(--weak); }
+.card-desc { font-size:12.5px; color:var(--muted); margin:10px 0 0; }
+.delta { display:inline-block; margin-top:8px; font-size:12px; font-weight:600; }
+.delta.up { color:var(--good); } .delta.down { color:var(--weak); }
+.pill,.chip { display:inline-block; border-radius:999px; font-size:12px; font-weight:600; padding:2px 9px; }
+.good { color:var(--good); background:var(--good-bg); } .fair { color:var(--fair); background:var(--fair-bg); }
+.weak { color:var(--weak); background:var(--weak-bg); } .na { color:var(--muted); background:#eef1f6; }
+.legend { font-size:13px; color:var(--muted); margin-top:12px; }
+.tbl { background:var(--card); border:1px solid var(--line); border-radius:14px; overflow-x:auto; }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); background:#fafbfd; padding:10px 12px; border-bottom:1px solid var(--line); white-space:nowrap; }
+td { padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+tr:last-child td { border-bottom:0; }
+tr.current td { background:#fbf7ec; }
+.num { text-align:center; white-space:nowrap; }
+.qid { font-weight:600; color:var(--ink2); text-decoration:none; font-family:ui-monospace,Menlo,monospace; font-size:13px; }
+.cat { font-size:12px; color:var(--muted); }
+.nc { text-align:center; font-weight:600; color:var(--ink2); }
+.muted { color:var(--muted); } .small { font-size:12.5px; }
+.urdu { font-family:"Noto Nastaliq Urdu","Jameel Noori Nastaleeq",serif; line-height:2; }
+.detail { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin-bottom:16px; }
+.detail h3 { margin:0 0 10px; font-size:17px; color:var(--ink); }
+.score-row { display:flex; flex-wrap:wrap; gap:6px; }
+.cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+@media (max-width:760px) { .cols { grid-template-columns:1fr; } }
+.answer { white-space:pre-wrap; background:#fafbfd; border:1px solid var(--line); border-radius:10px; padding:12px; font-size:14px; max-height:420px; overflow:auto; }
+.answer.ref { background:#fffaf0; border-color:#f1e3c2; }
+.reasons { margin:0; padding-left:18px; font-size:13.5px; } .reasons li { margin-bottom:6px; }
+.err { color:var(--weak); }
+.sources { margin:0; padding-left:18px; font-size:13.5px; }
+details.passage { border:1px solid var(--line); border-radius:10px; margin:6px 0; background:#fafbfd; }
+details.passage summary { cursor:pointer; padding:8px 12px; font-size:13px; color:var(--ink2); }
+pre { white-space:pre-wrap; margin:0; padding:10px 12px; font-size:12.5px; border-top:1px solid var(--line); max-height:360px; overflow:auto; }
+</style></head>
+<body>
+<header><div class="wrap">
+  <h1>Justice AI <span>·</span> RAG evaluation</h1>
+  <div class="meta">
+    <span>Run <b>2026-11-13_005635</b></span><span>first test</span>
+    <span>Questions <b>5</b></span>
+    <span>Judge <b>gpt-4.1-mini</b> (Ragas)</span>
+    <span>Avg time per answer <b>11.05s</b></span>
+    
+  </div>
+</div></header>
+<div class="wrap">
+  <h2>Average scores</h2>
+  <div class="cards">
+        <div class="card">
+          <div class="card-top"><span class="card-label">Faithfulness</span><span class="pill good">good</span></div>
+          <div class="score">1.00</div>
+          <div class="bar"><span class="fill good" style="width:100%"></span></div>
+          <p class="card-desc">Share of the answer&#x27;s statements that are supported by the passages it was written from. Low = the answer says things its sources don&#x27;t (hallucination).</p>
+          
+        </div>
+        <div class="card">
+          <div class="card-top"><span class="card-label">Answer relevancy</span><span class="pill good">good</span></div>
+          <div class="score">0.85</div>
+          <div class="bar"><span class="fill good" style="width:85%"></span></div>
+          <p class="card-desc">How directly the answer addresses the question that was asked.</p>
+          
+        </div>
+        <div class="card">
+          <div class="card-top"><span class="card-label">Context precision</span><span class="pill good">good</span></div>
+          <div class="score">1.00</div>
+          <div class="bar"><span class="fill good" style="width:100%"></span></div>
+          <p class="card-desc">Whether the passages the search returned are on point, with the useful ones ranked first.</p>
+          
+        </div>
+        <div class="card">
+          <div class="card-top"><span class="card-label">Context recall</span><span class="pill good">good</span></div>
+          <div class="score">1.00</div>
+          <div class="bar"><span class="fill good" style="width:100%"></span></div>
+          <p class="card-desc">Whether the search found everything the reference answer needs.</p>
+          
+        </div>
+        <div class="card">
+          <div class="card-top"><span class="card-label">Factual correctness</span><span class="pill fair">fair</span></div>
+          <div class="score">0.68</div>
+          <div class="bar"><span class="fill fair" style="width:68%"></span></div>
+          <p class="card-desc">How closely the answer&#x27;s claims match the checked reference answer (F1 of matching claims).</p>
+          
+        </div></div>
+  <p class="legend">Scores run from 0 to 1. <span class="chip good">good</span> ≥ 0.80 &nbsp; <span class="chip fair">fair</span> 0.60–0.79 &nbsp; <span class="chip weak">weak</span> &lt; 0.60. Reference answers marked "not yet reviewed" should be checked by a person before the scores are relied on.</p>
+
+  <h2>Per question</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>ID</th><th>Question</th><th>Faithfulness</th><th>Answer relevancy</th><th>Context precision</th><th>Context recall</th><th>Factual correctness</th><th>Time</th></tr></thead>
+    <tbody>
+        <tr>
+          <td><a href="#q-crim-01" class="qid">crim-01</a><div class="cat">Criminal law: bail</div></td>
+          <td><span>What are the grounds for pre-arrest bail under Section 498 Cr.P.C.?</span></td>
+          <td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip good">0.97</span></td><td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip weak">0.50</span></td>
+          <td class="num muted">12.7s</td>
+        </tr>
+        <tr>
+          <td><a href="#q-stat-01" class="qid">stat-01</a><div class="cat">Statute: Pakistan Penal Code</div></td>
+          <td><span>What is the punishment for dishonestly issuing a cheque under Section 489-F PPC?</span></td>
+          <td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip good">0.85</span></td><td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip good">0.84</span></td>
+          <td class="num muted">8.19s</td>
+        </tr>
+        <tr>
+          <td><a href="#q-fam-01" class="qid">fam-01</a><div class="cat">Family law: khula</div></td>
+          <td><span>Does a wife have to return the dower to get khula?</span></td>
+          <td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip fair">0.79</span></td><td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip fair">0.60</span></td>
+          <td class="num muted">11.39s</td>
+        </tr>
+        <tr>
+          <td><a href="#q-stat-02" class="qid">stat-02</a><div class="cat">Statute: contract law</div></td>
+          <td><span>What makes an agreement a contract under Section 10 of the Contract Act, 1872?</span></td>
+          <td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip good">0.88</span></td><td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip fair">0.73</span></td>
+          <td class="num muted">11.12s</td>
+        </tr>
+        <tr>
+          <td><a href="#q-urdu-01" class="qid">urdu-01</a><div class="cat">Criminal law: Urdu question</div></td>
+          <td><span dir="rtl" class="urdu">قتل کے مقدمے میں ایف آئی آر تاخیر سے درج ہونے کا ملزم پر کیا اثر پڑتا ہے؟</span></td>
+          <td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip fair">0.74</span></td><td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip good">1.00</span></td><td class="num"><span class="chip fair">0.72</span></td>
+          <td class="num muted">11.85s</td>
+        </tr></tbody>
+  </table></div>
+
+  <h2>All runs</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Run</th><th>Label</th><th>Questions</th><th>Faithfulness</th><th>Answer relevancy</th><th>Context precision</th><th>Context recall</th><th>Factual correctness</th></tr></thead>
+    <tbody><tr class="current"><td>2026-11-13_005635</td><td>first test</td><td class='num'>5</td><td class='num'>1.00</td><td class='num'>0.85</td><td class='num'>1.00</td><td class='num'>1.00</td><td class='num'>0.68</td></tr></tbody>
+  </table></div>
+
+  <h2>Answer details</h2>
+  
+        <section class="detail" id="q-crim-01">
+          <h3><span class="qid">crim-01</span> <span>What are the grounds for pre-arrest bail under Section 498 Cr.P.C.?</span></h3>
+          <div class="score-row"><span class="chip good">Faithfulness 1.00</span><span class="chip good">Answer relevancy 0.97</span><span class="chip good">Context precision 1.00</span><span class="chip good">Context recall 1.00</span><span class="chip weak">Factual correctness 0.50</span></div>
+          <div class="cols">
+            <div><h4>Justice AI's answer</h4><div class="answer">The grounds for pre-arrest bail under Section 498 Cr.P.C. are well established by the Supreme Court and Lahore High Court through authoritative judgments. Pre-arrest bail is an extraordinary remedy granted only in exceptional cases where the petitioner shows a good prima facie case, and it is demonstrated that arrest and refusal of bail would likely be motivated by mala fide intentions or ulterior motives to injure or humiliate the accused, causing irreparable harm (Rana Muhammad Arshad v. Muhammad Rafique, PLD 2009 SC 427; Ahtisham Ali v. The State, 2023 SCMR 975; Muhammad Rafie v. Ghaneem Aabir, 2024 LHC 938).
+
+The courts have consistently held that:
+
+- The petitioner must establish reasonable grounds to believe he is not guilty of the offence and that the case requires further inquiry (Section 497(2) Cr.P.C.).
+- There must be a genuine and imminent apprehension of arrest causing virtual restraint or custody.
+- The arrest must be shown to be sought for ulterior motives, such as harassment or abuse of process by the police, rather than to further the ends of justice.
+- The petitioner should physically surrender to the court and not be a fugitive or have a past criminal record that disentitles him to bail.
+- Pre-arrest bail is not a substitute for post-arrest bail and should be granted sparingly to avoid hampering investigation.
+- The High Court or Sessions Court has concurrent jurisdiction to grant pre-arrest bail, but the petitioner should ordinarily approach the court of first instance first.
+
+These principles were laid down in the Full Bench decision in Hidayat Ullah Khan v. The Crown (PLD 1949 Lahore 21), reaffirmed in Rana Abdul Khaliq v. The State (2019 SCMR 1129), and applied in subsequent cases such as Malik Tariq Hanif Awan v. State (2020 LHC 1794) and Muhammad Fayyaz v. State (2019 LHC 3198).
+
+In summary, the grounds for pre-arrest bail under Section 498 Cr.P.C. require:
+
+- A good prima facie case for bail on merits.
+- Proof of mala fide or ulterior motive behind the arrest.
+- Imminent or actual restraint or custody.
+- No disqualifying factors like fugitive status or past criminal record.
+- The petitioner must first seek relief from the Sessions Court unless justified otherwise.
+
+This framework ensures that pre-arrest bail protects innocent persons from victimization without undermining the criminal justice process.</div></div>
+            <div><h4>Reference answer</h4><div class="answer ref">Pre-arrest bail is an extraordinary relief, granted only in extraordinary situations to protect innocent persons from victimisation through abuse of law for ulterior motives. It is not a substitute for post-arrest bail. The accused must satisfy the conditions of Section 497(2) Cr.P.C., i.e. show reasonable grounds that he is not guilty or that the case calls for further inquiry, and must also show that the intended arrest is motivated by ulterior motives such as humiliating or injuring him, or that he would suffer irreparable harm if arrested. Section 498 Cr.P.C. is an independent provision, but bail under it can only be granted to a person who is present in court, and the stringent criteria do not stop the court from granting it where the record plainly shows false implication.</div>
+                 <p class="muted small">Based on: Ahtisham Ali v. The State (Supreme Court, 2023), Malik Tariq Hanif Awan v. State (2020 LHC 1794), Muhammad Fayyaz v. State (2019 LHC 3198) · <b>not yet reviewed by a person</b></p></div>
+          </div>
+          
+          
+          <h4>Sources shown to the user</h4><ul class="sources"><li>MALIK TARIQ HANIF AWAN VS STATE ETC <span class='muted'>Lahore High Court 2020</span></li><li>MUHAMMAD FAYYAZ VS STATE ETC <span class='muted'>Lahore High Court 2019</span></li><li>Ahtisham Ali v. The State <span class='muted'>Supreme Court of Pakistan 2023</span></li><li>Muhammad Rafie Vs Ghaneem Aabir etc. <span class='muted'>Lahore High Court 2024</span></li></ul>
+          <h4>Passages the answer was written from (4)</h4><details class="passage"><summary>Passage 1: [Doc 1 of 4] MALIK TARIQ HANIF AWAN VS STATE ETC | lhc_case | Lahore High Court | 2020 | score=0.896 | pdf_url=https://sys.lhc.gov.pk/appjud</summary><pre>[Doc 1 of 4] MALIK TARIQ HANIF AWAN VS STATE ETC | lhc_case | Lahore High Court | 2020 | score=0.896 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2020LHC1794.pdf
+[CASE INFO]
+Case: MALIK TARIQ HANIF AWAN VS STATE ETC
+Case No: Crl. Revision-Against Conviction 127-20
+Judge(s): Mr. Justice Tariq Saleem Sheikh 10-07-2020 2020 LHC 1794 2021   PCrLJ  250
+Citation: 2020 LHC 1794
+
+[PASSAGE]
+[CASE] MALIK TARIQ HANIF AWAN VS STATE ETC | Lahore High Court | 2020 | 2020 LHC 1794
+
+9. 
+The Hon‟ble Full Bench not only answered the question 
+referred to it in the affirmative but also laid down the following 
+fundamentals for grant of pre-arrest bail: 
+ 
+“[I]n a proper case, the High Court has power under section 498 
+Criminal Procedure Code to make an order that a person, who is 
+suspected of an offence for which he may be arrested by a police 
+officer or a Court, shall be admitted to bail. The exercise of this 
+power should, however, be confined to cases in which, not only good 
+prima facie ground is made out for the grant of bail in respect of the 
+offence alleged, but also it should be shown that if the petitioner 
+were to be arrested and refused bail, such an order would, in all 
+probability, be made not from motives of furthering the ends of 
+justice in relation to the case, but from some ulterior motives, and 
+with the object of injuring the petitioner, or that the petitioner would 
+in such an eventuality suffer irreparable harm.” 
+10. 
+In The Crown v. Khushi Muhammad (PLD 1953 FC 170) 
+the Federal Court held that although the Legislature had employed 
+Crl.Revision No.127/2020 
+ 
+5 
+different terminologies in sections 497 and 498 (as observed by the 
+High Court in Hidayat Ullah Khan‟s case, supra), they were 
+synonymous. It further held that the concept of “bail” postulates 
+release of a person from the custody of police and delivery into the 
+hands of the sureties who undertake to produce him in Court 
+whenever required. Section 498 Cr.P.C. does not in any way enlarge 
+the categories of persons to whom bail can be granted under Chapter 
+XXXIX. Thus, the said section cannot be invoked to admit a person to 
+bail unless he is in actual custody or subject to some form of 
+imminently threatened restraint under a warrant of arrest issued 
+against him. This provision, however, does not apply to convicts and 
+it cannot be invoked to release them. The powers of the High Court 
+under Section 498 are not merely revisional but are concurrent with 
+those of the court of first instance.  
+11.  
+The Hon‟ble Supreme Court of Pakistan considered the 
+above-mentioned judgment in Sadiq Ali v. The State (PLD 1966 SC 
+589) and observed that on principle there seemed no difference 
+between the case of a person against whom a warrant of arrest had 
+been issued and the one whose arrest at the hands of the police, 
+without a warrant, was imminent unless the court intervened. It was 
+only the certainty of arrest in the case of a warrant that could be 
+accepted as the foundation for the exercise of the power of bail and 
+the inevitability of such arrest might be equated with actual restraint 
+or custody. Accordingly, the apex Court ruled:  
+ 
+“[T]he rule laid down in Khushi Muhammad‟s case could be safely 
+extended to a direction for the grant of bail to a person, whose arrest, 
+on a criminal charge by the police, without a warrant, is proved to be 
+imminent and certain, and where the circumstances would justify the 
+grant of bail. Such an interpretation, in my humble judgment, is 
+consistent with the language of sections 496 and 497 of the Code and 
+involves no widening of the scope of the power given by section 498 
+as compared with its extent under the former sections. Indeed, such 
+an order might be eminently called for, in certain circumstances of 
+grave character, affecting the liberty of a citizen. Indiscriminate 
+grant of bail, however, merely on the request of a person, who 
+appears in Court and thereby surrenders himself to that Court, 
+without the other, conditions for such bail being satisfied, would 
+amount to an act of judicial extravagance which cannot be 
+countenanced.” 
+Crl.Revision No.127/2020 
+ 
+6 
+12. 
+Sadiq Ali‟s case approved the principles for grant of pre-
+arrest bail formulated in Hidayat Ullah Khan‟s case, supra.
+[…]
+Section 498 Cr.P.C. is neither ancillary nor subsidiary to sections 
+496 and 497 but is an independent section which conferred 
+uncontrolled power on the High Court and the Court of Session to 
+grant bail to a person. The conditions laid down in Section 497 
+Cr.P.C. could at the best be guidelines for grant of bail. However, 
+Section 498-A Cr.P.C. has placed fetters on the exercise of 
+jurisdiction. Bail cannot be granted to a person who is not in custody 
+or not present in court or against whom no case is registered. 
+Further, the bail order is effective only to the extent of the case in 
+which it is passed.  
+ 
+(2) 
+The term “custody” is not restricted to physical custody. If a person 
+is in restraint or apprehends arrest in a case which is cognizable, his 
+custody is intended by the police officer who can arrest him without 
+warrant. Hence, there is an obvious distinction between pre-arrest 
+bail and bail after arrest. 
+ 
+(3) 
+The criteria laid down in Hidayat Ullah Khan‟s case has not 
+undergone any change so far. The three principles laid down therein 
+should be strictly followed. The courts should grant pre-arrest bail 
+sparingly and only in appropriate cases. An unstinting exercise of 
+this power embarrasses the prosecution in investigation – as is the 
+general complaint.</pre></details><details class="passage"><summary>Passage 2: [Doc 2 of 4] MUHAMMAD FAYYAZ VS STATE ETC | lhc_case | Lahore High Court | 2019 | score=0.872 | pdf_url=https://data.lhc.gov.pk/reported_jud</summary><pre>[Doc 2 of 4] MUHAMMAD FAYYAZ VS STATE ETC | lhc_case | Lahore High Court | 2019 | score=0.872 | pdf_url=https://data.lhc.gov.pk/reported_judgments/download_file/5539/2019LHC3198.pdf
+[CASE INFO]
+Case: MUHAMMAD FAYYAZ VS STATE ETC
+Case No: Crl. Misc-Pre-arrest Bail 1138-B-19
+Judge(s): Mr. Justice Ch. Abdul Aziz 04-07-2019 2019 LHC 3198 2020 PCrLJ 73 Lah
+Citation: 2019 LHC 3198
+
+[PASSAGE]
+[CASE] MUHAMMAD FAYYAZ VS STATE ETC | Lahore High Court | 2019 | 2019 LHC 3198
+
+6. 
+The dismissal of this application was vociferously urged by the 
+prosecution on the ground of limited scope of pre-arrest bail. In this regard, it is 
+observed that no doubt the criteria laid down for the grant of pre-arrest bail is 
+stringent in nature but not to an extent whereby a court is precluded to exercise 
+jurisdiction under section 498 Cr.P.C. even in cases where the innocence or 
+false implication of an accused is patently reflected from the record. This Court 
+is not oblivious of the fact that though the provision of section 498 was enacted 
+in Criminal Procedure Code, 1898 from its very inception, however, the 
+concept of pre-arrest bail developed through necessary interpretation made by 
+Hon’ble Full Bench of Lahore Court in case reported as Hidayat ullah Khan v. 
+The Crown (PLD 1949 Lahore 21). From a peep through the judicial archives, 
+it unveils that even prior to the aforementioned Full Bench decision, the Courts 
+had been granting bail before arrest but such relief was much dependent upon 
+the discretion of the court, without there being any specific guidelines. If any 
+reference in this regard is needed that can be made to the cases reported as 
+Emperor v. Muhammad Fandh AIR (21) 1934 Sind (36 Cr.P.C L J 711) 
+Crl. Misc. No.1138-B of 2019 
+3 
+and Johur Mat and others, 10 C W N 1093 (4 Cr.P.C L J 221). The Hon’ble 
+Full Bench of this Court in the case of Hadayat ullah Khan (mentioned supra) 
+while pondering upon the concept of pre-arrest bail made the law more explicit 
+by laying down guidelines, which for reference sake are being reproduced 
+hereunder:- 
+ 
+“For the reasons given above, the reply which I would give to the question referred to us is 
+that, in a proper case, the High Court has power under section 498, Criminal Procedure 
+Code, to make an order that a person who is suspected of an offence for which he may be 
+arrested by a police officer or a Court, shall be admitted to bail. The exercise of this power 
+should, however, be confined to cases in which, not only is good prima facie ground made 
+out for the grant of bail in respect of the offence alleged, but also, it should be shown that 
+if the petitioner were to be arrested and refused bail, such an order would, in all 
+probability, be made not from motives of furthering the ends of justice in relation to the 
+case, but from some ulterior motive, and with the object of injuring the petitioner, or that 
+the petitioner would in such an eventuality suffer irreparable harm.” 
+ 
+It reasonably evinces from the observation of Hon’ble Full Bench of 
+this Court, mentioned above that discretion to grant pre-arrest bail is to be 
+exercised in favour of an accused, if his implication in the case is apparently 
+stirred with mala fide and he has a good prima facie case for the grant of bail. 
+The proposition of pre-arrest bail was authoritatively adjudged by this Court in 
+another case reported as Sh. Zahoor Ahmad v. The State (PLD 1974 Lahore
+[…]
+256) with following observation:- 
+ 
+“The main conditions to be satisfied before exercise of jurisdiction to allow pre-arrest bail 
+under section 498, Cr.P.C. are-- 
+(a) 
+that there should be a genuine proved apprehension of imminent arrest with the 
+effect of virtual restraint on the petitioner; 
+(b) 
+that the petitioner should physically surrender to the Court; 
+(c) 
+that on account of ulterior motive, particularly on the part of the police, there 
+should be apprehension of harassment and undue irreparable humiliation by 
+means of unjustified arrest; 
+(d) 
+that it should be otherwise a fit case on merits for exercise of discretion in 
+favour of the petitioner for the purpose of bail. In this behalf the provisions 
+contained in section 497 Cr.P.C. would have to be kept in mind; 
+(e) 
+that unless there is reasonable explanation, the petitioner should have earlier 
+moved the Sessions Court for the same relief under section 498, Cr.P.C.” 
+ 
+ 
+In the case reported as Murad Khan v. Fazla-e-Subhan (PLD 1983 
+SC 82) the Hon’ble Apex Court cancelled the pre-arrest bail granted to an 
+accused by the High Court on the ground that his implication apparently was 
+not based on mala fide. However, the scope of pre-arrest bail was widened by 
+the Hon’ble Supreme Court of Pakistan in a subsequent case reported as 
+Meeran Bux v. The State and another (PLD 1989 SC 347) and besides mala 
+fide, the merits of the case were also considered favourably for extending such 
+relief. For advantage sake, it is being mentioned that in the wake of an 
+accusation of having participated in homicide occurrence, the accused Meeran 
+Bux was ascribed the role of inflicting a gunshot injury on the left thigh of 
+deceased Badshah Dino and the pre-arrest bail granted to accused was cancelled 
+Crl. Misc. No.1138-B of 2019 
+4 
+by the High Court, however, the Hon’ble Supreme Court of Pakistan restored 
+the bail granting order of learned Sessions Judge while observing that the injury 
+besides not being on the vital part of the body was also declared by the doctor 
+to be simple in nature. 
+7. 
+From the above discussion, it reasonably insinuates that wh</pre></details><details class="passage"><summary>Passage 3: [Doc 3 of 4] Ahtisham Ali v. The State | sc_case | Supreme Court of Pakistan | 2023 | score=0.871 | pdf_url=https://www.supremecourt.gov.pk/</summary><pre>[Doc 3 of 4] Ahtisham Ali v. The State | sc_case | Supreme Court of Pakistan | 2023 | score=0.871 | pdf_url=https://www.supremecourt.gov.pk/downloads_judgements/crl.p._13_k_2023.pdf
+[CASE INFO]
+Case: Ahtisham Ali v. The State
+Case No: Crl.P.L.A.13-K/2023
+Judge(s): MR. JUSTICE MUNIB AKHTAR, MR. JUSTICE MUHAMMAD ALI MAZHAR
+Citation: 2023 SCMR 975
+Parties: Ahtisham Ali v. The State
+Date: 22-03-2023
+
+[PASSAGE]
+[CASE] Ahtisham Ali v. The State | Supreme Court of Pakistan | 2023 | 2023 SCMR 975
+
+7. It is a well settled exposition of law that the grant of pre-arrest
+bail is an extraordinary relief which may be granted in
+extraordinary situations to protect the liberty of innocent persons
+in cases lodged with mala fide intention to harass the person with
+ulterior motives. By all means, while applying for pre-arrest bail,
+the petitioner has to satisfy the Court with regard to the basic
+conditions quantified under Section 497 of the Code of Criminal
+Procedure, 1898 (“Cr.PC”) vis-à-vis the existence of reasonable
+grounds to confide that he is not guilty of the offence alleged
+against him and the case is one of further inquiry. In the case of
+Rana Abdul Khaliq Vs The State and others (2019 SCMR 1129),
+this Court held that grant of pre-arrest bail is an extra ordinary
+Cr.P. No. 13-K/2023
+remedy in criminal jurisdiction; it is a diversion of the usual
+course of law, arrest in cognizable cases; it is a protection to the
+innocent being hounded on trumped up charges through abuse
+of process of law, therefore a petitioner seeking judicial
+protection is required to reasonably demonstrate that the
+intended arrest is calculated to humiliate him with taints of mala
+fide; it is not a substitute for post arrest bail in every run of the
+mill criminal case as it seriously hampers the course of
+investigation. Ever since the advent of Hidayat Ullah Khan&#x27;s case
+(PLD 1949 Lahore 21), the principles of judicial protection are
+being faithfully adhered to till date, therefore, grant of pre-arrest
+bail essentially requires considerations of mala fide, ulterior
+motive or abuse of process of law, situations wherein Court must
+not hesitate to rescue innocent citizens; these considerations are
+conspicuously missing in the present case. While in the case of
+Rana Muhammad Arshad Vs Muhammad Rafique and another
+(PLD 2009 SC 427), this Court has discussed the framework and
+guidelines for granting bail before arrest under Section 498,
+Cr.P.C. by the High Courts and Courts of Session. It was held that
+the exercise of this power should be confined to cases in which not
+only a good prima facie ground is made out for the grant of bail in
+respect of the offence alleged, but also it should be shown that if
+the petitioner were to be arrested and refused bail, such an order
+would, in all probability, be made not from motives of furthering
+the ends of justice in relation to the case, but from some ulterior
+motive, and with the object of injuring the petitioner, or that the
+petitioner would in such an eventuality suffer irreparable harm.
+This Court laid down the following parameters for pre-arrest bail:-
+
+(a) grant of bail before arrest is an extraordinary relief to be
+granted only in extraordinary situations to protect innocent
+persons against victimization through abuse of law for ulterior
+motives;
+
+(b) pre-arrest bail is not to be used as a substitute or as an
+alternative for post-arrest bail;
+
+(c) bail before arrest cannot be granted unless the person
+seeking it satisfies the conditions specified through subsection
+(2) of section 497 of Code of Criminal Procedure i.e. unless he
+establishes the existence of reasonable grounds leading to a
+belief that he was not guilty of the offence alleged against him
+and that there were, in fact, sufficient grounds warranting
+further inquiry into his guilt;
+
+Cr.P. No. 13-K/2023
+(d) not just this but in addition thereto, he must also show
+that his arrest was being sought for ulterior motives,
+particularly on the part of the police; to cause irreparable
+humiliation to him and to disgrace and dishonour him;
+
+(e) such a petitioner should further establish that he had not
+done or suffered any act which would disentitle him to a
+discretionary relief in equity e.g. he had no past criminal
+record or that he had not been a fugitive at law; and finally
+that;
+
+(f) in the absence of a reasonable and a justifiable cause, a
+person desiring his admission to bail before arrest must in the
+first instance approach the Court of first instance i.e. the
+Court of Sessions, before petitioning the High Court for the
+purpose.</pre></details><details class="passage"><summary>Passage 4: [Doc 4 of 4] Muhammad Rafie Vs Ghaneem Aabir etc. | lhc_case | Lahore High Court | 2024 | score=0.863 | pdf_url=https://sys.lhc.gov.pk/appju</summary><pre>[Doc 4 of 4] Muhammad Rafie Vs Ghaneem Aabir etc. | lhc_case | Lahore High Court | 2024 | score=0.863 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2024LHC938.pdf
+[CASE INFO]
+Case: Muhammad Rafie Vs Ghaneem Aabir etc.
+Case No: Crl. Misc. 73505/23
+Judge(s): Mr. Justice Farooq Haider 13-03-2024 2024 LHC 938 PLJ 2024 Cr.C 627 (Lahore High Court, Lahore)
+Citation: 2024 LHC 938
+
+[PASSAGE]
+[CASE] Muhammad Rafie Vs Ghaneem Aabir etc. | Lahore High Court | 2024 | 2024 LHC 938
+
+7.  
+It is a well settled exposition of law that the grant of pre-
+arrest bail is an extraordinary relief which may be granted in 
+extraordinary situations to protect the liberty of innocent persons in 
+cases lodged with mala fide intention to harass the person with 
+ulterior motives. By all means, while applying for pre-arrest bail, the 
+petitioner has to satisfy the Court with regard to the basic conditions 
+quantified under section 497 of the Code of Criminal Procedure, 
+1898 (&quot;Cr.P.C.&quot;) vis-à-vis the existence of reasonable grounds to 
+confide that he is not guilty of the offence alleged against him and 
+the case is one of further inquiry. In the case of Rana Abdul Khaliq 
+v. The State and others (2019 SCMR 1129), this Court held that 
+grant of pre-arrest bail is an extra ordinary remedy in criminal 
+jurisdiction; it is a diversion of the usual course of law, arrest in 
+ 
+                  Crl. Misc. No.73505-CB/2023 
+               
+ 3 
+ 
+ 
+ 
+cognizable cases; it is a protection to the innocent being hounded on 
+trumped up charges through abuse of process of law, therefore a 
+petitioner seeking judicial protection is required to reasonably 
+demonstrate that the intended arrest is calculated to humiliate him 
+with taints of mala fide; it is not a substitute for post arrest bail in 
+every run of the mill criminal case as it seriously hampers the course 
+of investigation. Ever since the advent of Hidayat Ullah Khan&#x27;s case 
+(PLD 1949 Lahore 21), the principles of judicial protection are 
+being faithfully adhered to till date, therefore, grant of pre-arrest 
+bail essentially requires considerations of mala fide, ulterior motive 
+or abuse of process of law, situations wherein Court must not 
+hesitate to rescue innocent citizens; these considerations are 
+conspicuously missing in the present case. While in the case of                             
+Rana Muhammad Arshad v. Muhammad Rafique and another 
+(PLD 2009 SC 427), this Court has discussed the framework and 
+guidelines for granting bail before arrest under section 498, Cr.P.C. 
+by the High Courts and Courts of Session. It was held that the 
+exercise of this power should be confined to cases in which not only 
+a good prima facie ground is made out for the grant of bail in 
+respect of the offence alleged, but also it should be shown that if the 
+petitioner were to be arrested and refused bail, such an order would, 
+in all probability, be made not from motives of furthering the ends of 
+justice in relation to the case, but from some ulterior motive, and 
+with the object of injuring the petitioner, or that the petitioner would 
+in such an eventuality suffer irreparable harm. This Court laid down 
+the following parameters for pre- arrest bail:- 
+ 
+(a) grant of bail before arrest is an extraordinary relief to be 
+granted only in extraordinary situations to protect innocent 
+persons against victimization through abuse of law for 
+ulterior motives;  
+ 
+(b) pre-arrest bail is not to be used as a substitute or as an 
+alternative for post-arrest bail; 
+ 
+(c) bail before arrest cannot be granted unless the person 
+seeking it satisfies the conditions specified through 
+subsection (2) of section 497 of Code of Criminal Procedure 
+i.e. unless he establishes the existence of reasonable grounds 
+leading to a belief that he was not guilty of the offence 
+alleged against him and that there were, in fact, sufficient 
+grounds warranting further inquiry into his guilt;  
+ 
+(d) not just this but in addition thereto, he must also show 
+that his arrest was being sought for ulterior motives, 
+particularly on the part of the police; to cause irreparable 
+humiliation to him and to disgrace and dishonour him; 
+ 
+(e) such a petitioner should further establish that he had not 
+done or suffered any act which would disentitle him to a 
+discretionary relief in equity e.g. he had no past criminal 
+record or that he had not been a fugitive at law; and finally 
+that;  
+ 
+(f) in the absence of a reasonable and a justifiable cause, a 
+person desiring his admission to bail before arrest must in 
+the first instance approach the Court of first instance i.e. the</pre></details>
+          <details class="passage"><summary>Agent steps</summary><pre>🧭 Understood: intent=case_law, follow-up=none, written in English → answer in English
+🔎 Search query → &#x27;grounds for pre-arrest bail under Section 498 Cr.P.C.&#x27;
+⚡ Dispatch → search_case_law
+✅ Sufficient results (best_score=0.90)
+🧪 Grounding verification passed: evidence is sufficient for synthesis.
+🧪 Relevance gate skipped — strong match (top score 0.90 ≥ 0.75)
+✍️  Synthesizing final answer (2368 chars) from 1 tool result(s)</pre></details>
+        </section>
+        <section class="detail" id="q-stat-01">
+          <h3><span class="qid">stat-01</span> <span>What is the punishment for dishonestly issuing a cheque under Section 489-F PPC?</span></h3>
+          <div class="score-row"><span class="chip good">Faithfulness 1.00</span><span class="chip good">Answer relevancy 0.85</span><span class="chip good">Context precision 1.00</span><span class="chip good">Context recall 1.00</span><span class="chip good">Factual correctness 0.84</span></div>
+          <div class="cols">
+            <div><h4>Justice AI's answer</h4><div class="answer">The punishment for dishonestly issuing a cheque under Section 489-F of the Pakistan Penal Code (PPC) is imprisonment which may extend to three years, or a fine, or both. This applies when a cheque is issued dishonestly towards repayment of a loan or fulfillment of an obligation and is dishonoured on presentation, unless the accused proves that arrangements were made with the bank to honour the cheque and the bank was at fault (Muhammad Anwar v. The State, 2019 Islamabad High Court; Kabir Akber v. The State, 2022 Lahore High Court; Syed Muhammad Ali v. The State, 2024 Lahore High Court).
+
+Section 489-F PPC specifically criminalizes the act of dishonestly issuing a cheque for repayment of a loan or fulfillment of an obligation that is dishonoured on presentation. The dishonesty element requires mens rea, meaning the cheque must be issued with the intention to cause wrongful loss or gain (Muhammad Anwar v. The State, 2019). Mere dishonour of a cheque is not sufficient; the prosecution must prove dishonesty and that the cheque was issued for repayment of a loan or obligation (N.R.S.P Microfinance Bank Ltd v. A.S.J, 2020 Lahore High Court).
+
+The burden of proof lies on the accused to show that the cheque was dishonoured due to the bank’s fault despite arrangements made to honour it (Kabir Akber v. The State, 2022). The punishment is capped at three years imprisonment or a fine or both (Hayat Kimya Pakistan Pvt Ltd v. Humair Yusuf, 2023 Lahore High Court).
+
+In Syed Muhammad Ali v. The State (2024 Lahore High Court), the court emphasized that Section 489-F was not intended as a tool for recovery of money but to punish dishonest issuance of cheques. The court also noted that the punishment under Section 489-F does not fall within the prohibitory clause of Section 497 Cr.P.C., making bail the general rule and refusal an exception.
+
+**Relevant provisions:**
+- Section 489-F PPC: Dishonestly issuing a cheque punishable with imprisonment up to three years, or fine, or both.
+- Burden on accused to prove bank fault in dishonouring cheque.
+- Dishonesty requires intention to cause wrongful loss or gain.
+- Cheque must be issued for repayment of loan or fulfillment of obligation.
+
+For practical steps:
+- Ensure evidence of dishonesty and loan/obligation is established before prosecution.
+- Accused should gather proof of bank arrangements to honour cheque if available.
+- Bail applications should highlight that punishment is limited to three years or fine and that bail is generally granted in such cases.</div></div>
+            <div><h4>Reference answer</h4><div class="answer ref">Under Section 489-F PPC, whoever dishonestly issues a cheque towards repayment of a loan or fulfilment of an obligation which is dishonoured on presentation is punishable with imprisonment which may extend to three years, or with fine, or with both. It is a defence if the drawer proves, with the burden of proof on him, that he had made arrangements with his bank to ensure the cheque would be honoured and that the bank was at fault in not honouring it. The essential ingredients are dishonesty and issuance of the cheque towards repayment of a loan or fulfilment of an obligation.</div>
+                 <p class="muted small">Based on: Muhammad Anwar v. The State (2019 PCrLJ 1244, Islamabad High Court), Kabir Akber v. The State (Lahore High Court, 2022), Hayat Kimya Pakistan v. Humair Yusuf (Lahore High Court, 2023) · <b>not yet reviewed by a person</b></p></div>
+          </div>
+          
+          
+          <h4>Sources shown to the user</h4><ul class="sources"><li>Muhammad Anwar VS The State etc      (Hadia Aziz Advocate) <span class='muted'>Islamabad High Court 2019</span></li><li>Kabir Akber Vs The State etc <span class='muted'>Lahore High Court 2022</span></li><li>NAVEED ISHAQ VS JOP ETC <span class='muted'>Lahore High Court 2021</span></li><li>Hayat Kimya Pakistan Pvt Ltd through Fatih Ustunel Vs Humair Yusuf etc <span class='muted'>Lahore High Court 2023</span></li><li>N.R.S.P MICROFINANCE BANK LTD VS A.S.J ETC <span class='muted'>Lahore High Court 2020</span></li><li>Syed Muhammad Ali Vs The State etc <span class='muted'>Lahore High Court 2024</span></li></ul>
+          <h4>Passages the answer was written from (6)</h4><details class="passage"><summary>Passage 1: [Doc 1 of 6] Muhammad Anwar VS The State etc      (Hadia Aziz Advocate) | isb_case | Islamabad High Court | 2019 | score=0.938 | pdf_url=htt</summary><pre>[Doc 1 of 6] Muhammad Anwar VS The State etc      (Hadia Aziz Advocate) | isb_case | Islamabad High Court | 2019 | score=0.938 | pdf_url=https://mis.ihc.gov.pk/attachments/judgements/Criminal_Appeal_-77-2012_636882418989400023.pdf
+[CASE INFO]
+Case: Muhammad Anwar VS The State etc      (Hadia Aziz Advocate)
+Case No: Criminal Appeal-77-2012
+Judge(s): Aamer Farooq
+Citation: 2019 PCRLJ 1244
+Parties: Muhammad Anwar v. The State etc      (Hadia Aziz Advocate)
+Date: 2019-02-28
+
+[PASSAGE]
+[CASE] Muhammad Anwar VS The State etc      (Hadia Aziz Advocate) | Islamabad High Court | 2019 | 2019 PCRLJ 1244
+
+Section 489-F PPC. The referred Section reads as follows:
+(Section 489-F. Dishonestly issuing a cheque
+Whoever dishonestly issues a cheque towards repayment of a loan or
+fulfillment of an obligation which is dishonoured on presentation shall,
+be punishable with imprisonment which may extend to three years or
+with fine or with both, unless he can establish for which the burden of
+proof shall rest on him that he had made arrangements with his bank
+to ensure that the cheque would be honoured and that the bank was
+at fault in not honouring the cheque.
+The bare reading of Section shows that the salient
+features / ingredients of offence are dishonesty and issuance of
+cheques towards repayment of loan or fulfillment of an obligation
+which is dishonoured on presentation. Dishonesty being the mens
+rea of the offence and issuance of cheques towards repayment of a
+loan or fulfillment of an obligation being the actus reus. The
+prosecution had to prove both the elements beyond reasonable
+doubt in order to procure the conviction of the petitioners.
+Dishonesty is defined in Pakistan Penal Code (PPC) as an act done
+to cause wrongful loss to other or himself. The bare presence of
+6
+Criminal Appeal No.77-2012
+Criminal Revision No.60 of 2012
+&amp; Criminal Revision 49 of 2012 5
+one element is not sufficient for the conviction of the accused. In
+case reported as “Malik Safdar Ali Vs. Syed Khalid Ali and 2 others”
+(PLD 2012 Sindh 464) the Hon’ble Sindh High Court observed
+that the word dishonesty used under Section 489-F PPC required
+existence of mens rea to commit fraud by issuance of a cheque.
+Mere issuance of cheque and its becoming the dishonored later,
+being actus reus, would not be able to attract the provisions of
+Section 489-F PPC. Moreover, it was observed that a cheque being
+mode of payment must appear to have been issued against
+consideration of business transaction or any instant dealing of the
+date and time thereof, for which, he had issued such cheque, in
+order to discern whether there was mens rea. The Court should
+take into account all the relevant facts. Similar views were
+expressed in cases reported as “Basar Khan Vs. The State and
+another” (2009 P CR. LJ 964), Shah Fahad and another Vs. The
+State (2014 YLR 2241) and Maj. (Retd.) Javed Inayat Khan Kiyani
+Vs. The State (PLD 2006 Lahore 752).
+8. In view of the above legal position during the course of
+trial the settlement/compromise was tendered in evidence as
+Exhibit-PL. The prosecution did not allege or prove dishonesty on
+part of the petitioners. In this behalf even the complainant
+appearing as PW-06 reiterated the nature of transaction between
+himself and Zafar Iqbal. The tendering of cheques and dishonouring
+have been categorically stated, but from the entire reading of his
+7
+Criminal Appeal No.77-2012
+Criminal Revision No.60 of 2012
+&amp; Criminal Revision 49 of 2012 5
+examination-in-chief dishonesty is not borne out. The learned Trial
+Court as well as Appellate Court has also not given any due finding
+on the referred aspect of the matter that the prosecution has not
+proved the mens rea. In this behalf the concept of dishonesty was
+elaborated in case reported as “Maj. (Retd.) Javed Inayat Khan
+Kiyani Vs. The State“ (PLD 2006 Lahore 752) by the Hon’ble
+Lahore High Court in the following terms:
+….”8. In The Law Laxicon edited by Justice Y.B.
+Chandrachud, at page 567 &quot;dishonesty&quot; defined as
+&quot;giving the ordinary meaning the word &quot;dishonestly&quot;
+means &quot;dishonesty&quot;. It further elaborates dishonesty as
+disposition to lie, cheat, deceive, or defraud;
+untrustworthiness, lack of integrity. Lack of honesty,
+probity or integrity in principle; lack of fairness and
+straightforwardness, disposition, to defraud, deceive or
+astray. Like Pakistan Penal Code, in section 24 of Indian
+Penal Code &quot;dishonestly&quot; is defined in the similar
+words:--
+&quot;Whoever does anything with the intention of causing
+wrongful gain to one person or wrongful loss to another
+person is said to do that thing dishonestly.&quot;</pre></details><details class="passage"><summary>Passage 2: [Doc 2 of 6] Kabir Akber Vs The State etc | lhc_case | Lahore High Court | 2022 | score=0.936 | pdf_url=https://sys.lhc.gov.pk/appjudgments/</summary><pre>[Doc 2 of 6] Kabir Akber Vs The State etc | lhc_case | Lahore High Court | 2022 | score=0.936 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2022LHC8156.pdf
+[CASE INFO]
+Case: Kabir Akber Vs The State etc
+Case No: Crl. Misc. 52233/22
+Judge(s): Mr. Justice Tariq Saleem Sheikh 08-12-2022 2022 LHC 8156 2023 PCr.LJ 1588 Lahore
+Citation: 2022 LHC 8156
+
+[PASSAGE]
+[CASE] Kabir Akber Vs The State etc | Lahore High Court | 2022 | 2022 LHC 8156
+
+30.  
+Having discussed the general law and jurisprudence 
+regarding corporate criminal liability, let’s turn to section 489-F PPC 
+which is an issue in the present case. It reads as under: 
+ 
+Crl. Misc. No. 52233/B/2022 
+ 
+ 
+ 
+ 
+ 
+ 
+14 
+ 
+489-F. Dishonestly issuing a cheque.– Whoever dishonestly issues a 
+cheque towards repayment of a loan or fulfilment of an obligation 
+which is dishonoured on presentation, shall be punished with 
+imprisonment which may extend to three years or with fine, or with 
+both, unless he can establish, for which the burden of proof shall rest 
+on him, that he had made arrangements with his bank to ensure that the 
+cheque would be honoured and that the bank was at fault in not 
+honouring the cheque. 
+31.</pre></details><details class="passage"><summary>Passage 3: [Doc 3 of 6] NAVEED ISHAQ VS JOP ETC | lhc_case | Lahore High Court | 2021 | score=0.933 | pdf_url=https://data.lhc.gov.pk/reported_judgment</summary><pre>[Doc 3 of 6] NAVEED ISHAQ VS JOP ETC | lhc_case | Lahore High Court | 2021 | score=0.933 | pdf_url=https://data.lhc.gov.pk/reported_judgments/download_file/7027/2021LHC7979.pdf
+[CASE INFO]
+Case: NAVEED ISHAQ VS JOP ETC
+Case No: Writ Petition-Criminal Proceedings-Registration of Case 4190-21
+Judge(s): Mr. Justice Muhammad Shan Gul 21-12-2021 2021 LHC 7979 PLJ 2022 Lahore 616 (Multan Bench)
+Citation: 2021 LHC 7979
+
+[PASSAGE]
+[CASE] NAVEED ISHAQ VS JOP ETC | Lahore High Court | 2021 | 2021 LHC 7979
+
+Section 489-F PPC? Can a person dupe himself? Can a 
+W.P. No.4190 of 2021  
+ 
+2 
+ 
+person lend money to himself and thereby assume an 
+obligation to repay himself? Can a person defraud 
+himself? Can a person bind himself to an obligation that 
+he owes himself? These questions may sound very basic 
+and in fact naïve but since a Justice of Peace i.e. an Addl. 
+District &amp; Sessions Judge has ordered for the registration 
+of a criminal case against the petitioner in the present 
+petition on the basis of a dishonoured ‘self’ cheque 
+without demur, the proposition at hand gains importance 
+and may be worthy of being looked at, both, for the 
+purpose of gaining judicial clarity as also in ensuring 
+respect and sanctity for the age old principle of penal 
+liability being strictly construed.  
+3.  
+Despite best efforts all that this Court has been able 
+to lay its hands on are two reported precedents (both bail 
+applications) and which only contain observations on the 
+proposition in issue in passing. 
+4.  
+In “Muhammad Sarfraz v. The State and others” 
+(2014 SCMR 1032), it has been held as follows:- 
+“Moreover, the said cheque, was not issued in 
+favour of the complainant; besides there is no 
+amount mentioned in words. The complainant 
+however alleges that this was a „self cheque‟ and 
+therefore, it was issued to him and accordingly 
+the dishonouring of the cheque would attract the 
+provisions of section 489-F, P.P.C. He has also 
+mentioned that the amount covered by the cheque 
+was paid by the complainant to the petitioner 
+from time to time for the purposes of the business 
+and it is for the return of such amount. Contrarily, 
+on further query, there is no evidence available 
+with the complainant as to how, when and by 
+W.P. No.4190 of 2021  
+ 
+3 
+ 
+what process various amounts were paid to the 
+petitioner for business purposes. To that end, 
+these aspects of the matter have not been taken 
+into consideration by the learned High Court 
+while declining bail to the petitioner. We find 
+these contours of the case to be quite conspicuous 
+and relevant entitling the petitioner to bail.” 
+ 
+5.  
+In “Johar v. The State and another” (2014 YLR 
+640), it has been held as follows:- 
+“The question whether a cheque issued to „Self‟ 
+can be said to be issued with dishonest intention or 
+towards repayment of a loan or fulfillment of an 
+obligation, which is dishonored on presentation 
+would seriously need consideration at trial.” 
+  
+6.  
+The above cases, therefore, only attach a prima 
+facie recognition and acknowledgement to the otherwise 
+basic principle that a dishonoured „self‟ cheque cannot 
+possibly attract criminal liability. The issue before this 
+Court, therefore, comes across as arguably a case of first 
+impression. 
+7.  
+Petitioner has laid a challenge to an order dated 
+15.3.2021 whereby a Justice of Peace has ordered for the 
+registration of a criminal case against the petitioner on the 
+basis of a „self‟ dishonoured cheque on which no 
+endorsement whatsoever in favour of the eventual bearer has 
+been recorded.
+[…]
+Section 489-F of the Pakistan Penal Code of 1860 
+criminalizes and resultantly penalizes the act of dishonestly 
+issuing a cheque towards repayment of a loan or fulfilment 
+of an obligation, which is dishonoured on presentation by 
+punishment with imprisonment which may extend to three 
+years or with fine, or with both, unless the drawer can 
+establish, for which the burden of proof shall rest on him, that 
+he had made arrangements with his bank to ensure that the 
+cheque would be honoured and that the bank was at fault in 
+not honouring the cheque. 
+W.P. No.4190 of 2021  
+ 
+7 
+ 
+14. 
+The term „dishonestly‟ has been defined by the 
+Pakistan Penal Code, 1860 in Section 24 to mean doing 
+anything with the intention of causing wrongful gain to one 
+person or wrongful loss to another person. 
+15. 
+In order for the act of issuance of a cheque to 
+constitute a cognizable offence under Section 489-F of the 
+PPC, 1860 not only must the cheque be issued with the 
+intention of causing wrongful gain to one person or wrongful 
+loss to another but the cheque must also be issued towards 
+the repayment of a loan or fulfillment of an obligation.  
+16. 
+Keeping in view the above two provisions it was 
+held by the Honorable Supreme Court of Pakistan in “Mian 
+Allah Ditta v. The State and others” (2013 SCMR 51) at 
+Paragraph 6 that “every transaction where a cheque is 
+dishonored may not constitute an offence. The foundational 
+e
+…[passage truncated]</pre></details><details class="passage"><summary>Passage 4: [Doc 4 of 6] Hayat Kimya Pakistan Pvt Ltd through Fatih Ustunel Vs Humair Yusuf etc | lhc_case | Lahore High Court | 2023 | score=0.928 | pd</summary><pre>[Doc 4 of 6] Hayat Kimya Pakistan Pvt Ltd through Fatih Ustunel Vs Humair Yusuf etc | lhc_case | Lahore High Court | 2023 | score=0.928 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2023LHC2938.pdf
+[CASE INFO]
+Case: Hayat Kimya Pakistan Pvt Ltd through Fatih Ustunel Vs Humair Yusuf etc
+Case No: Criminal Proceedings 3103/23
+Judge(s): Mr. Justice Tariq Saleem Sheikh 05-06-2023 2023 LHC 2938 2024 CLD 326 (Lahore)
+Citation: 2023 LHC 2938
+
+[PASSAGE]
+[CASE] Hayat Kimya Pakistan Pvt Ltd through Fatih Ustunel Vs Humair Yusuf etc | Lahore High Court | 2023 | 2023 LHC 2938
+
+Section 489-F in its present form was inserted in the Pakistan 
+Penal Code, 1860 (“PPC”), by the Criminal Law Amendment Ordinance, 
+2002. It reads as follows: 
+Writ Petition No. 3103/2023 
+ 
+- 4 - 
+489-F. Dishonestly issuing a cheque.– Whoever dishonestly issues a 
+cheque towards repayment of a loan or fulfillment of an obligation which 
+is dishonoured on presentation, shall be punishable with imprisonment, 
+which may extend to three years, or with fine, or with both, unless he can 
+establish, for which the burden of proof shall rest on him, that he had 
+made arrangements with his bank to ensure that the cheque would be 
+honoured and that the bank was at fault in not honouring the cheque. 
+9. 
+ 
+A bare perusal of section 489-F PPC shows that every 
+dishonour of a cheque may not constitute an offence. This provision is 
+attracted when the following conditions are fulfilled: (i) the cheque was 
+issued with a dishonest intention; (ii) the cheque was for the repayment of a 
+loan or fulfilment of a financial obligation; and (iii) the cheque was 
+dishonoured on presentation. In Malik Safdar Ali v. Syed Khalid Ali and 
+others (PLD 2012 Sindh 464), the Sindh High Court ruled that section 489-F 
+PPC seeks to protect the public from financial fraud committed through 
+dishonest cheques. According to it, section 420 PPC applies to all types of 
+fraud, deceit and deception that cause loss to a person, but section 489-F 
+PPC defines a separate offence when fraud or cheating is perpetrated using a 
+cheque. 
+10. 
+ 
+The first question that requires determination is whether 
+cheques given as security (or as “guarantee”, as sometimes described) would 
+attract section 489-F PPC if they are returned unpaid. These cheques may 
+bear the same date as the execution date or be post-dated or inchoate 
+instruments.1 The general rule is that the cheques, which are not intended to 
+settle any specific transaction but to foster trust between the parties in their 
+usual business operations, are not susceptible to criminal prosecution under 
+section 489-F PPC.2 This issue was raised before the Supreme Court of 
+Pakistan for the first time in Mian Allah Ditta v. The State and others  
+(2013 SCMR 51). In that case, the Investigating Officer informed the Court 
+that during the investigation, he found that the parties had a dispute, which 
+they agreed to resolve through arbitration. The arbitrator took the cheque 
+from the accused as security before initiating the proceedings, and the sum 
+written on it was never adjudicated against him. The Supreme Court 
+observed that if the cheque was not issued to repay an outstanding loan or 
+fulfilment of an existing obligation but to meet a prospective future liability 
+                                          
+1 See section 21 of the Negotiable Instruments Act, 1881. 
+2 Malik Safdar Ali v. Syed Khalid Ali and others (PLD 2012 Sindh 464). 
+Writ Petition No. 3103/2023 
+ 
+- 5 - 
+that may be determined as a result of another exercise, then one of the key 
+elements of section 489-F PPC is lacking. Given the facts of the case, the 
+Supreme Court held that the cheque in question was furnished as security 
+and admitted the accused to pre-arrest bail. However, it avoided detailed 
+deliberation on the issue “lest it may prejudice anyone during investigation 
+or trial.”</pre></details><details class="passage"><summary>Passage 5: [Doc 5 of 6] N.R.S.P MICROFINANCE BANK LTD VS A.S.J ETC | lhc_case | Lahore High Court | 2020 | score=0.926 | pdf_url=https://sys.lhc.gov.pk</summary><pre>[Doc 5 of 6] N.R.S.P MICROFINANCE BANK LTD VS A.S.J ETC | lhc_case | Lahore High Court | 2020 | score=0.926 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2020LHC764.pdf
+[CASE INFO]
+Case: N.R.S.P MICROFINANCE BANK LTD VS A.S.J ETC
+Case No: Writ Petition-Criminal Proceedings-Registration of Case. 8502-19
+Judge(s): Mr. Justice Tariq Saleem Sheikh 06-02-2020 2020 LHC 764 PLJ 2021 Lahore 43 (Bahawalpur Bench)
+Citation: 2020 LHC 764
+
+[PASSAGE]
+[CASE] N.R.S.P MICROFINANCE BANK LTD VS A.S.J ETC | Lahore High Court | 2020 | 2020 LHC 764
+
+5. 
+Malik Javaid Aslam Naich, Ch. Sohail Akhtar 
+Alkara and Syed Zeeshan Haider, Advocates, were lead 
+counsel for the Respondents. The other learned counsel 
+adopted their arguments. Mr. Alkara contended that, firstly, 
+the applications under Section 22-A Cr.P.C. before the JOP 
+were not maintainable and liable to be dismissed as such. If 
+the Petitioner wanted to initiate criminal proceedings against 
+any defaulting borrower for dishonour of cheque it could only 
+file a complaint under Section 20 of the Financial Institutions 
+W.P. No.8502/2019 
+3
+(Recovery of Finances) Ordinance, 2001 (the “FIO”). FIR 
+under Section 489-F PPC was not competent. Secondly, the 
+Respondents had handed over the cheques in question to the 
+Petitioner as security at the time when the loan was 
+sanctioned: they were not meant to be encashed. The 
+Petitioner had concocted a false story that the Respondents 
+issued them after the default to liquidate their accrued 
+liability. Mr. Alkara relied on Syed Mushahid Shah and 
+others v. Federal Investigating Agency and others (2017 
+SCMR 1218) and Muhammad Asif Nawaz v. Learned 
+Additional Sessions Judge/Justice of Peace, Multan and 2 
+others (PLJ 2013 Lah. 606) in support of his contentions.  
+6. 
+Syed Zeeshan Haider, Advocate, contended that 
+mere dishonour of cheque was not sufficient to constitute an 
+offence under Section 489-F PPC. The prosecution was 
+obliged to show that it was issued “dishonestly”. In the 
+present cases the Petitioner had not brought any material on 
+record to this effect so FIR could not be ordered to be 
+registered. He placed reliance on Mian Allah Ditta v. The 
+State and others (2013 SCMR 51).  
+7. 
+The learned Assistant Advocate General supported 
+the Petitioner‟s viewpoint. He argued that Section 3 of the 
+Microfinance Ordinance specifically barred application of the 
+laws relating to banking companies or financial institutions to 
+microfinance institutions licensed thereunder. As such, the 
+remedy under Section 20 of the FIO was not available to the 
+Petitioner and it could have recourse to Section 489-F PPC 
+under the general law.  
+8. 
+Arguments heard. Record perused.  
+9. 
+The Pakistan Penal Code, 1860 (PPC), seeks to 
+provide a general penal code for the country1 and has effect 
+                                                 
+1. Preamble to the Pakistan Penal Code, 1860  
+W.P. No.8502/2019 
+4
+throughout it.2 Section 2 ordains that every person shall be 
+liable to punishment thereunder for every act or omission 
+contrary to its provisions. Section 5 adds that it does not 
+repeal, vary, suspend or affect any law relating to mutiny and 
+desertion of officers, soldiers, sailors or airmen in the service 
+of the State or of any special or local law. Similarly, the Code 
+of Criminal Procedure, 1898 (Cr.P.C.), sets out the general 
+law relating to procedure for inquiry, investigation and trial of 
+criminal cases and other ancillary matters. Section 5 thereof 
+provides that it shall apply to all offences under the PPC but 
+for offences under other laws its provisions shall be applied 
+subject to any enactment for the time being in force regulating 
+the manner and place of investigation, inquiring into, trying or 
+otherwise dealing with such offence.
+[…]
+Section 489-F PPC enacts as follows: 
+ 
+489-F. Dishonestly issuing a cheque. – Whoever 
+dishonestly issues a cheque towards repayment of a loan or 
+fulfilment of an obligation which is dishonoured on 
+presentation, shall be punished with imprisonment which 
+may extend to three years or with fine, or with both, unless 
+he can establish, for which the burden of proof shall rest on 
+him, that he had made arrangements with his bank to 
+ensure that the cheque would be honoured and that the bank 
+was at fault in not honouring the cheque. 
+20. 
+A bare reading of the above section shows that the 
+foundational elements to constitute the offence are: (i) the 
+cheque was duly issued, (ii) it was issued with dishonest 
+intent, (iii) it was issued towards repayment of a loan or 
+fulfillment of an obligation, and (iv) it was dishonoured on 
+presentation.  
+W.P. No.8502/2019 
+10
+21.  
+The Oxford Advanced Learner‟s Dictionary        
+(8th Edition) defines “obligation” as “(a) the state of being 
+forced to do something because it is your duty, or because of a 
+law etc.; or (b) something which you must do because you 
+have promised, because of a law etc.” Similarly LEXICO, the 
+on-line dictionary,5 def
+…[passage truncated]</pre></details><details class="passage"><summary>Passage 6: [Doc 6 of 6] Syed Muhammad Ali Vs The State etc | lhc_case | Lahore High Court | 2024 | score=0.922 | pdf_url=https://sys.lhc.gov.pk/appjudg</summary><pre>[Doc 6 of 6] Syed Muhammad Ali Vs The State etc | lhc_case | Lahore High Court | 2024 | score=0.922 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2024LHC1622.pdf
+[CASE INFO]
+Case: Syed Muhammad Ali Vs The State etc
+Case No: Crl. Misc. 18392/24
+Judge(s): Mr. Justice Farooq Haider 19-04-2024 2024 LHC 1622 2024 MLD 1363 (Lahore)
+Citation: 2024 LHC 1622
+
+[PASSAGE]
+[CASE] Syed Muhammad Ali Vs The State etc | Lahore High Court | 2024 | 2024 LHC 1622
+
+2.   
+After hearing learned counsel for the parties, learned Deputy District Public 
+Prosecutor and going through the available record with their able assistance, it has 
+been noticed that briefly, as per Crime Report (F.I.R.) got recorded by Syed Tallat 
+Imran (complainant), he had to take Rs.32,00,000/- (Rupees thirty two hundred 
+thousands only) from Syed Muhammad Ali  (accused in the case, now petitioner) 
+and he (present petitioner) issued cheque of Rs.32,00,000/- to the complainant 
+which was dishonoured on presentation by the bank.  
+Undeniably, Section: 489-F PPC was brought on the statute for the purpose 
+of awarding punishment to the person, who issues the cheque dishonestly for 
+repayment of a loan or fulfilment of an “obligation”, which is dishonoured on 
+presentation; for the purpose of ready reference, Section: 489-F PPC is hereby 
+reproduced: - 
+“489-F PPC Dishonestly issuing a cheque.--Whoever  
+dishonestly issues a cheque towards re-payment of a loan or 
+fulfilment of an obligation which is dishonoured on 
+presentation, shall be punishable with imprisonment which 
+may extend to three years, or with fine, or with both, unless 
+can establish, for which the burden of proof shall rest on him, 
+that he had made arrangements with his bank to ensure that 
+the cheque would be honoured and that the bank was at fault 
+in not honouring the cheque.”   
+             (emphasis added) 
+ 
+Bare perusal of aforementioned provision of law reflects that for invoking Section: 
+489-F PPC, mere issuance of cheque or its dishonouring is not sufficient rather 
+first of all it will have to be proved as a “must” that cheque was issued for 
+repayment of loan or fulfilment of obligation, meaning thereby that there must be 
+material available on the record to show loan or obligation. 
+On Court’s query, learned Deputy District Public Prosecutor under 
+instructions of investigating officer of the case (present before the Court) and after 
+Crl. Misc. No.18392-B/2024 
+   
+2 
+ 
+herself going through available record apprises that though it is mentioned in the 
+first information report that complainant had to take Rs.32,00,000/- from the 
+petitioner yet during entire investigation of the case, it has not come on the record 
+that when, before whom and for which reason as well as for what purpose, said 
+amount was given by the complainant to the petitioner and how it was due to 
+complainant from the petitioner, therefore, applicability of Section: 489-F PPC in 
+this case itself requires further probe/inquiry within the purview of sub-Section (2) 
+of Section: 497 Cr.P.C. 
+It goes without saying that Section: 489-F PPC was not brought on the 
+statute for using the same as a tool for recovery of the amount rather for the 
+purpose of awarding punishment to the person, who issues the cheque dishonestly 
+for payment of a loan or fulfilment of an “obligation”, which is dishonoured on 
+presentation. Although cheque involving huge amount has been dishonoured in the 
+case yet punishment for the offence under Section: 489-F PPC is three years, or 
+fine, or both and of course said punishment does not fall within the ambit of 
+prohibition contained in Section: 497 Cr.P.C.; grant of bail in such like cases is a 
+rule and refusal is an exception.   
+ 
+Though it is contention of learned Deputy District Public Prosecutor that 
+case was registered on 03.02.2024, non-bailable warrants of arrest of the petitioner 
+were issued on 08.02.2024, proclamation against him was issued on 15.02.2024 
+whereas challan report under Section 173 Cr.P.C. for proceedings under Section: 
+512 Cr.P.C. was submitted on 17.02.2024 yet at the same time apprises that 
+petitioner was arrested in this case on 08.03.2024 and sent to jail on 09.03.2024 
+where he is confined till now. Since proclamation was issued on 15.02.2024, and 
+period in the proclamation for appearance of the accused cannot be less than 30 
+days as per statute and admittedly petitioner was arrested on 08.03.2024 i.e. before</pre></details>
+          <details class="passage"><summary>Agent steps</summary><pre>🧭 Understood: intent=statutory_law, follow-up=none, written in English → answer in English
+🔎 Search query → &#x27;punishment for dishonestly issuing a cheque under Section 489-F PPC&#x27;
+⚡ Dispatch → retrieve_with_full_pipeline
+✅ Sufficient results (best_score=0.94)
+🧪 Grounding verification passed: evidence is sufficient for synthesis.
+🧪 Relevance gate skipped — strong match (top score 0.94 ≥ 0.75)
+✍️  Synthesizing final answer (2527 chars) from 1 tool result(s)</pre></details>
+        </section>
+        <section class="detail" id="q-fam-01">
+          <h3><span class="qid">fam-01</span> <span>Does a wife have to return the dower to get khula?</span></h3>
+          <div class="score-row"><span class="chip good">Faithfulness 1.00</span><span class="chip fair">Answer relevancy 0.79</span><span class="chip good">Context precision 1.00</span><span class="chip good">Context recall 1.00</span><span class="chip fair">Factual correctness 0.60</span></div>
+          <div class="cols">
+            <div><h4>Justice AI's answer</h4><div class="answer">A wife seeking khula under Pakistani law is generally required to return the dower (mahr) she received from her husband, but this obligation is not absolute and depends on the circumstances of the case and the court’s discretion. The return of dower is primarily linked to khula granted under Section 10(4) of the West Pakistan Family Courts Act, 1964, where the dissolution is granted immediately after failure of reconciliation without full trial. However, if khula is granted after evidence and trial, the court may decide on the return of dower based on the facts, including whether the wife was at fault or compelled to seek khula.
+
+The Lahore High Court in *Muhammad Kamran v. Mst. Sumera Majeed* (2018 LHC 3749) held that the proviso to Section 10(4) of the Family Courts Act requires the wife to restore the dower when khula is granted immediately after reconciliation fails. The court emphasized that this rule applies only to khula cases where the decree is passed forthwith without trial. If the case proceeds to trial, the court has discretion to order return of dower or not, depending on the circumstances, including fault of the parties.
+
+Similarly, the Lahore High Court in *Muhammad Mohsin Raza v. ADJ* (2022 LHC 7184) explained that if the wife seeks khula without fault on her part and is compelled by circumstances beyond her control, she may not be required to surrender the dower at all. Conversely, if the wife seeks khula without valid reason or fault of the husband, she must surrender the entire dower. The court has discretion to proportionately reduce the amount of dower to be returned if both parties are partly at fault.
+
+The Federal Shariat Court, as cited in *Asif Mehmood v. ADJ Sahiwal* (2025 LHC 2359), reinforced that the return of dower in khula cases is not automatic. If the wife seeks khula due to her dislike without fault on the husband’s part, she must return the dower. But if the wife proves ill-treatment or fault on the husband’s part, the court may reduce or waive the return of dower entirely.
+
+The Islamabad High Court in *Nasir Mehmood v. Learned ADJ Islamabad* (2023 CLC 350) also upheld that where khula is granted at the reconciliation stage without full trial, the wife must return the dower. However, if the case involves full evidence and trial, the court may exercise discretion.
+
+In summary, the legal position under Pakistani law is:
+
+- If khula is granted immediately after failure of reconciliation (no trial), the wife must return the dower (Section 10(4) proviso, Family Courts Act).
+- If khula is granted after trial and evidence, the court decides on return of dower based on fault and circumstances.
+- If the wife is at fault or seeks khula without valid reason, full return of dower is required.
+- If the wife is compelled by the husband&#x27;s fault or ill-treatment, the court may reduce or waive the return of dower.
+
+Practical steps:
+- In khula petitions, argue the facts carefully to show whether the wife was at fault or compelled.
+- Present evidence of fault or ill-treatment to seek waiver or reduction of dower return.
+- If khula is granted at reconciliation stage, expect the court to order return of dower.
+- Courts have discretion; each case depends on its facts and evidence.</div></div>
+            <div><h4>Reference answer</h4><div class="answer ref">Generally, where a wife obtains khula she must return the dower and benefits received from the husband, or remit the dower if not yet received, and she cannot later claim the dower as of right. However, return of dower is not an indispensable condition for the grant of khula: once the Family Court finds the wife entitled to khula it must decree dissolution, and non-return of dower only creates a civil liability without affecting the validity of the decree. Where the wife seeks khula because of the husband&#x27;s fault and gives reasonable justification, she should not be required to return the dower already received, and the court decides how much of the benefits should be returned in the circumstances.</div>
+                 <p class="muted small">Based on: Muhammad Kamran v. Mst. Sumera Majeed (2018 LHC 3749), Shaza Tehseen v. Tehseen Butt (Islamabad High Court, 2022), Asif Mehmood v. ADJ Sahiwal (Lahore High Court, 2025) · <b>not yet reviewed by a person</b></p></div>
+          </div>
+          
+          
+          <h4>Sources shown to the user</h4><ul class="sources"><li>MUHAMMAD KAMRAN VS MST. SUMERA MAJEED ETC. <span class='muted'>Lahore High Court 2018</span></li><li>Asif Mehmood Vs ADJ Sahiwal etc <span class='muted'>Lahore High Court 2025</span></li><li>Nasir Mehmood VS Learned ADJ Islamabad etc <span class='muted'>Islamabad High Court 2022</span></li><li>MUHAMMAD MOHSIN RAZA VS ADJ ETC <span class='muted'>Lahore High Court 2022</span></li></ul>
+          <h4>Passages the answer was written from (4)</h4><details class="passage"><summary>Passage 1: [Doc 1 of 4] MUHAMMAD KAMRAN VS MST. SUMERA MAJEED ETC. | lhc_case | Lahore High Court | 2018 | score=0.874 | pdf_url=https://sys.lhc.gov.pk</summary><pre>[Doc 1 of 4] MUHAMMAD KAMRAN VS MST. SUMERA MAJEED ETC. | lhc_case | Lahore High Court | 2018 | score=0.874 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2018LHC3749.pdf
+[CASE INFO]
+Case: MUHAMMAD KAMRAN VS MST. SUMERA MAJEED ETC.
+Case No: Family 1752938.3955-15
+Judge(s): Mr. Justice Jawad Hassan 13-02-2018 2018 LHC 3749 2018 Y L R 1251
+Citation: 2018 LHC 3749
+
+[PASSAGE]
+[CASE] MUHAMMAD KAMRAN VS MST. SUMERA MAJEED ETC. | Lahore High Court | 2018 | 2018 LHC 3749
+
+8. 
+It is also worth-mentioning here that Section 10(4) of the West Pakistan Family Courts 
+Act, 1964 is applicable to the dissolution of marriage on the basis of &quot;Khula&quot; and not to the 
+dissolution of marriage on the grounds available to a wife under Section 2(ii) &amp; (iv) of the 
+Dissolution of Muslim Marriages Act, 1939. If any precedent in this regard is required, reliance 
+may be placed on the case of Khalid Mahmood (PLD 2007 Lahore 626). The relevant portion of 
+the same reads as under:- 
+&quot;11. The condition on the wife to restore to husband the dower, received by her at the 
+time of marriage, while seeking dissolution of marriage on the basis of Khula, according 
+to provisos to sub-section (4) of section 10 of Family Courts Act, is explicitly indicative 
+of fact that this provision of law (brought through amendment vide Ordinance, 2002) is 
+only meant to apply in suits in which dissolution of marriage is prayed for only on the 
+basis of Khula. Further in such like situation the decree is passed straightway on failure 
+of reconciliation. This proviso is not applicable, where the decree is not passed forthwith, 
+on failure of reconciliation proceedings and where the dispute cannot be resolved without 
+recording of evidence. Proviso was introduced to absolve the Court from following 
+normal procedure of trial and to empower it pass a decree, on failure of reconciliation, 
+without framing of issues and recording of evidence. Word &quot;and&quot; used between the 
+sentences, &quot;If reconciliation fails, shall pass a decree for dissolution of marriage 
+forthwith&quot; and &quot;shall also restore to husband the Haq Mehr&quot; has been employed 
+insightfully. This envisages that order for dissolution of marriage and restoration of Haq 
+Mehr, was to be passed simultaneously; When question of dissolution of marriage is 
+determined after proper trial then proviso, (ibid) is not applicable and Court can dissolve 
+the marriage according to the circumstances of each case. The power of the Family Court 
+to fix any consideration for dissolution of marriage, cannot be curtailed. The Court can 
+dissolve the marriage on the basis of Khula, even without any compensation, when it 
+finds that Khula, is being claimed due to the fault, on the part of husband.&quot; 
+A Full Bench of Peshawar High Court in the case of Mst. Saima Irum and three others (2006 
+MLD 83) has also expressed similar view. Relevant portion of the same is reproduced as under:- 
+&quot;6. Therefore, in our view, the word `Khula&#x27; should be construed as subject to the 
+presumption that the legislature does not intent, by its general language, to subvert the 
+established principles of Shariah on the subject and has left it for the Family Courts to 
+decide whether to dissolve the marriage between the spouses on the ground of Khula or 
+not. If from the plaint submitted by the wife, the only prayer of the wife is to dissolve her 
+marriage on the ground of Khula, then the Family Court under added provisos to sections 
+9 and 10 of the Family Courts Act, 1964 could dissolve the marriage between them on 
+the ground of Khula and could also order for restoration of the Haq Mahr received by the 
+wife in consideration of marriage, but if the claim of the wife is based on other grounds 
+also, such as cruelty etc., then the Family Courts shall proceed with the case in 
+accordance with law to determine by recording of evidence that the fault lies in which of 
+the parties and which of the parties are entitled to it.&quot;
+[…]
+9. 
+In this case, the learned Judge Family Court vide order dated 24.09.2013 has dissolved 
+the marriage between the parties by specifying that the marriage is being dissolved on the ground 
+of Khula subject to return of dower, therefore, the learned Judge Family Court has proceeded 
+with the case in accordance with law, therefore, no exception can be taken to it. In case titled 
+&quot;Mst. Saeeda Javed v. Javed Iobal and 2 others&quot; (PLD 2013 Peshawar 88) it has been held that 
+&quot;wife in case of dissolution of marriage on the ground of &quot;Khula&quot; would have to either remit the 
+dower amount, if not received by her or pay back same to husband if so received by her&quot;. 
+  
+In the findings recorded by learned Additional District Judge, Jhang qua dower amount, 
+he has merely appreciated the evidence of the Respondent No.1 and her witnesses but he has 
+failed to take into consideration this aspect of the case that the Respondent No.1 has obtained 
+decree for dissolution of marriage merely on the basis of &quot;Khula&quot; subject to return of dower 
+amount. It is settled preposition of law that wife in case of dissolution of marriage on the ground 
+of &quot;Khula&quot; would have to either remit the dower amount, if not received by her or pay back same 
+to husband if so received by her.  
+ 
+Since the Respondent No.1 herself had obtained dissolution of marriage on the basis of 
+&quot;Khula&quot;, therefore, she is not entitled for dower in the subsequent proceedings. In view of the 
+above, this petition is allowed the impugned judgment and decree of learned Appellate Court is 
+set aside and that of learned Judge Family Court, Jhang is. upheld.</pre></details><details class="passage"><summary>Passage 2: [Doc 2 of 4] Asif Mehmood Vs ADJ Sahiwal etc | lhc_case | Lahore High Court | 2025 | score=0.864 | pdf_url=https://sys.lhc.gov.pk/appjudgmen</summary><pre>[Doc 2 of 4] Asif Mehmood Vs ADJ Sahiwal etc | lhc_case | Lahore High Court | 2025 | score=0.864 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2025LHC2359.pdf
+[CASE INFO]
+Case: Asif Mehmood Vs ADJ Sahiwal etc
+Case No: Family 68712/24
+Judge(s): Mr. Justice Raheel Kamran 10-04-2025 2025 LHC 2359 2025 CLC 1074 (Lahore)
+Citation: 2025 LHC 2359
+
+[PASSAGE]
+[CASE] Asif Mehmood Vs ADJ Sahiwal etc | Lahore High Court | 2025 | 2025 LHC 2359
+
+9. 
+ 
+In view of the above backdrop, the impact of khula on wife’s 
+entitlement to dower is required to be determined. Islamic law recognizes khula 
+as a method for the dissolution of marriage, analogous to talaq, but they differ 
+significantly in their initiation, procedures, and consequences. Talaq is 
+primarily the right of the husband to unilaterally dissolve the marriage. In 
+case of talaq, the husband is precluded from claiming the dower, gifts, or 
+other benefits which he had already given to the wife.  The origin of this rule 
+is the command ordained in verse No.229 of Surah Al-Baqra, Urdu 
+translation of which reads as under: - 
+ طالق دو مرتبہ ہے پھر یا تو معروف طریقے سے روک لینا ہے یا پھر خوبصورتی کے ساتھ
+ رخصت کر دینا ہے اور تمہارے لیے یہ جائز نہیں ہے کہ جو کچھ تم نے انہیں دیا تھا اس میں
+ سے کچھ بھی واپس لو سوائے اس کے کہ دونوں کو اندیشہ ہو کہ وہ حدود ہللا کو قائم نہیں رکھ
+ سکیں گے پس اگر تمہیں یہ اندیشہ ہو کہ وہ دونوں حدود الہی پر قائم نہیں رہ سکتے تو ان
+W.P. No.68712 of 2024 
+ 
+5 
+ 
+ دونوں پر اس معاملے میں کوئی گناہ نہیں ہے جو عورت فدیہ میں دے یہ ہللا کی حدود ہیں جو
+ان سے تجاوز کر
+تے ہیں وہی ظالم ہیں۔ 
+Surah Al-Nisa, in verse 20 and 21 also explicitly restricts a husband from 
+claiming back the dower or any other benefits he has given to a wife he 
+wishes to divorce. Urdu translation of the said verses is as under: - 
+۲۰۔ اور اگر تم ایک 
+ بیوی کی جگہ دوسری بیوی بدلنا چاہو اور تم نے ایک کو ڈھیروں مال دے
+ رکھا ہو تو بھی اس میں سے کچھ نہ لو، کیا تم بہتان لگا کر اور کھلی ہوئی حق تلفی کر کے اس
+کو لو گے؟ 
+۲۱
+ ۔ اور کس طرح اس کو لو گے جب کہ تم ایک دوسرے
+کے 
+ آگے بے حجاب ہو چکے ہو اور
+انھوں نے تم سے مضبوط عہد لے رکھا ہے 
+The concept of khula is also based on verses No.228 and 229 of Surah  
+Al-Baqarah. Practical application of khula is found in the instances in the 
+lifetime of the Holy Prophet and thereafter. It is in this context that khula is
+[…]
+آگے بے حجاب ہو چکے ہو اور
+انھوں نے تم سے مضبوط عہد لے رکھا ہے 
+The concept of khula is also based on verses No.228 and 229 of Surah  
+Al-Baqarah. Practical application of khula is found in the instances in the 
+lifetime of the Holy Prophet and thereafter. It is in this context that khula is 
+initiated by the wife with the consent of the husband, or where the husband 
+does not consent, by a judicial decree that is obtained on the wife’s 
+application. In khula, the wife may be required to give some consideration to 
+the husband for her release from the marital bond. This consideration to be 
+paid by the wife in a khula is a matter of agreement between the parties or 
+determination by the Court, based on the specific circumstances of the case. 
+When it comes to the rules for such determination by the court, in the Imran 
+Anwar Khan’s case (supra), it has been held by the Federal Shariat Court 
+that where the wife obtains khula merely on the basis of disliking against the 
+husband the dower received by the wife is returnable. It was also held in the 
+referred case that where wife seeks khula due to fault on the part of the 
+husband by providing reasonable justification, it is not valid to require from 
+her return of the dower already received by her. In such eventuality, it is on 
+the court to determine, keeping in view facts and circumstances of the case, 
+that how much return of the already received benefits by the wife would be 
+appropriate. This view was reiterated by the Federal Shariat Court in the 
+case of Haji Saif-ur-Rahman Shaheen v. Islamic Republic of Pakistan 
+W.P. No.68712 of 2024 
+ 
+6 
+ 
+through Attorney General of Pakistan, Islamabad and 4 others (PLD 2024 
+Federal Shariat Court 9) in the following words: - 
+“- - - if a wife claims that she is forced to seek a decree of 
+khula because of her husband’s ill-treatment or mistreatment, 
+etc., the Court may reduce the amount of compensation if it 
+finds the husband at fault after recording of evidence so much 
+so that in severe cases, the Court may grant divorce in case of 
+khula to a wife without paying back any amount of Mahar (مہر) 
+at all.” 
+Therefore, the return or surrender of dower by the wife is not an automatic 
+consequence in each and every case of khula.</pre></details><details class="passage"><summary>Passage 3: [Doc 3 of 4] Nasir Mehmood VS Learned ADJ Islamabad etc | isb_case | Islamabad High Court | 2022 | score=0.863 | pdf_url=https://mis.ihc.gov</summary><pre>[Doc 3 of 4] Nasir Mehmood VS Learned ADJ Islamabad etc | isb_case | Islamabad High Court | 2022 | score=0.863 | pdf_url=https://mis.ihc.gov.pk/attachments/judgements/129115/1/129115_638024727819768107.pdf
+[CASE INFO]
+Case: Nasir Mehmood VS Learned ADJ Islamabad etc
+Case No: Writ Petition-1358-2021
+Judge(s): Sardar Ejaz Ishaq Khan
+Citation: 2023 CLC 350
+Parties: Nasir Mehmood v. Learned ADJ Islamabad etc
+Date: 2022-06-02
+
+[PASSAGE]
+[CASE] Nasir Mehmood VS Learned ADJ Islamabad etc | Islamabad High Court | 2022 | 2023 CLC 350
+
+**JUDGMENT SHEET**
+IN THE ISLAMABAD HIGH COURT, ISLAMABAD 
+JUDICIAL DEPARTMENT 
+6 
+The learned counsel for the petitioner during arguments attempted 
+for this Court to reappraise the evidence, which however is not the task of 
+this Court sitting in its Constitutional jurisdiction; the scope is limited to 
+cure any illegality, failure or excess of jurisdiction, material error of fact or 
+law patent on the face of record, and the like, and which does not entail that 
+ii) 
+the evidence of the defendant admitting the list of dowry articles 
+was recorded in the absence of his counsel in a hasty manner and 
+the personal belongings of the wife were intentionally written in 
+the list of dowry articles but they were not actually there. 
+i) 
+the wife was not entitled to retain 50% of the dower because she 
+had obtained khula and that she had herself left the house of the 
+petitioner without any lawful justification; and 
+5 
+The main thrust of the petitioner husband&#x27;s learned counsel was 
+that:- 
+4 
+Both the husband and the wife appealed the judgment which was 
+disposed of by a consolidated judgment dated 26.01.2021. The learned 
+appellate court dismissed both the appeals and agreed with the findings of 
+the learned family court. 
+3 
+On the question of return of dowry articles, the court believed the 
+wife&#x27;s version in evidence and accepted the dowry list appended with the 
+plaint for return of the items listed therein, citing the judgment titled Mst. 
+Saib Noor versus Zafar Iqbal (2011 YLR 1268), whereby the list of dowry 
+articles annexed with the plaint right from the inception of the suit and 
+exhibited without objection by the defendant was to be taken as authentic 
+and correct, the receipts of purchase of the dowry articles not being 
+produced in evidence notwithstanding, as the rigours of the law of evidence 
+did not apply to a family suit. The court also referred to the admission 
+made by the husband in his cross-examination that he had received the 
+dowry articles and had signed the list and, given that the husband was a 
+well-educated person, his contention that he signed the dowry list without 
+due care was rejected. 
+Nonetheless, the family court did not allow the 
+entire dowry list; it rejected the part thereof listing 22 tolas gold for the 
+reason that there wasn&#x27;t enough evidence to believe that this gold actually 
+existed. Resultantly, the family Court allowed the recovery of the dowry 
+list items except the 22 tolas gold listed therein. 
+-2- 
+Writ Petition No. 1358 of2021 
+Here too the Islamabad High Court held that the wife had to restore 
+haq mehr received by her in consideration 
+of marriage if the 
+marriage was dissolved on the basis of khula right after the pre- 
+trial reconciliation proceedings and before the entire evidence was 
+led and the court referred to the proviso to section 10(4) to come to 
+the conclusion that in such circumstances 
+the dower had to be 
+returned. 
+iv) 
+Khurram Naseer 
+versus 
+Judge Family Court (West) and others 
+(2016 MLD 1183 [Islamabad]) 
+Here too the court found that where the wife obtained a decree for 
+dissolution of marriage on the basis of khula, it was always subject 
+to return of dower and she subsequently could not claim it as of 
+right and that, in case of khula, the wife would have to either remit 
+the dower if she had not received it or pay back the same to the 
+husband if she had received it. 
+Here too the court found that on the basis of khula, the dower had 
+to be returned by the wife. 
+iii) 
+Muhammad Kamran 
+versus 
+Mst. Samera Majeed and others 
+(2018 YLR 1251 [Lahore]) 
+ii) 
+Muhammad Saeed 
+versus Additional District Judge and others 
+(2019 CLC 1008 [Lahore]) 
+Distinguishing Muhammad Zafar versus Judge. Family Court and 
+another (2005 CLD 1844) it was held that, when the marriage was 
+dissolved at the reconciliation 
+stage without going through the
+[…]
+to a poor family and the law report shows this factor was predominant in 
+the decision to allow her to retain the dower house. Neither of these cases 
+discussed the proviso to section 10( 4 ). In view of the fact that in this case 
+the wife lived for a few months only with the husband, in view of there 
+being no finding of the wife&#x27;s destitution, and in view of the finding of the 
+learned trial court that the wife admitted during the course of cross 
+examination that she herself left her husband&#x27;s house and that she turned 
+down the efforts of the husband and the mother for reconciliation, I find the 
+reliance on the &#x27;reciprocal benefits&#x27; principle by the family court an 
+excessive exercise of jurisdiction bordering on largesse uncalled for in the 
+circumstances of this case. 
+-4- 
+Writ Petition No. 1358 of2021 
+12 
+I am however persuaded by the learned counsel for the respondent 
+ex-wife that the dowry articles ordered to be returned by the family court is 
+not to be interfered with by questioning the failure of the wife to produce 
+receipts of purchase or a later objection of the husband to the dowry list. 
+The learned counsel cited, and I respectfully adhere to, the judgment of the 
+Hon &#x27;ble Supreme C</pre></details><details class="passage"><summary>Passage 4: [Doc 4 of 4] MUHAMMAD MOHSIN RAZA VS ADJ ETC | lhc_case | Lahore High Court | 2022 | score=0.833 | pdf_url=https://sys.lhc.gov.pk/appjudgmen</summary><pre>[Doc 4 of 4] MUHAMMAD MOHSIN RAZA VS ADJ ETC | lhc_case | Lahore High Court | 2022 | score=0.833 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2022LHC7184.pdf
+[CASE INFO]
+Case: MUHAMMAD MOHSIN RAZA VS ADJ ETC
+Case No: Writ Petition-Family-Maintenance 12505-20
+Judge(s): Mr. Justice Abid Hussain Chattha 17-10-2022 2022 LHC 7184 PLD 2025 Lahore 551
+Citation: 2022 LHC 7184
+
+[PASSAGE]
+[CASE] MUHAMMAD MOHSIN RAZA VS ADJ ETC | Lahore High Court | 2022 | 2022 LHC 7184
+
+Section 5 of the Act of 1939 is also relevant to the issue in hand 
+and is reproduced as under:- 
+“Nothing contained in this Act shall affect any right which a 
+married woman may have under Muslim law to her dower or 
+any part thereof on the dissolution of her marriage.” 
+ 
+10. 
+ 
+Nikah is regarded as a civil contract which is solemnized 
+against fixed dower or Mehr which is a denomination of property or a 
+consideration in cash or kind paid or undertaken to be paid by the husband to 
+his wife in the nature of gift in acknowledgment and recognition of her 
+consent to marry him. Some dower is liable to be fixed but no limit is 
+prescribed on the higher side. If dower is not mentioned in the Nikahnama, 
+customary amount is payable. Unpaid dower operates as a debt and takes 
+precedence over all rights acquired under a „will‟ or by inheritance. A 
+marriage between Muslim spouses can be dissolved by Talak, Mubarat or 
+Khula. Talak is an arbitrary and unilateral act of the husband, whereby, he 
+may divorce his wife. The spouses may agree to dissolution of marriage 
+through their mutual consent which is termed as Mubarat. Corresponding to 
+6 
+W. P. No. 12505 / 2020  
+ 
+the right to divorce accorded to a man, a Muslim woman is granted the right 
+to obtain divorce through the Court by filing a suit which is called Khula.  It 
+denotes the right of a Muslim woman to seek dissolution of her marriage in 
+which she gives or consents to give a consideration to the husband for her 
+release from marriage as determined by the Court. The payment or surrender 
+of consideration is an important ingredient of Khula and quantum thereof 
+can be equal to or less than the fixed dower. Section 2 of the Act of 1939 
+stipulates that a Muslim woman can seek dissolution of marriage or Khula 
+based on a variety of grounds listed therein. Ground (ix) of Section 2 of the 
+Act of 1939 is a catch all provision which entitles a Muslim woman to file a 
+suit for Khula on any ground recognized under Muslim personal law. Such 
+grounds delineate such instances where a woman may not be at fault for 
+seeking divorce by instituting a case for Khula but may be forced or 
+compelled to do so when she arrives at a conclusion that she can no longer 
+perform her obligations of Nikah within the limits prescribed by Allah, the 
+Almighty. The jurisprudence of Islamic law ordains that when a wife in her 
+case of Khula proves that she was not at fault for dissolution of marriage but 
+was compelled to seek Khula for circumstances beyond her control, despite 
+her best efforts to make the marriage successful, she does not require to 
+surrender dower at all and would retain her complete entitlement to dower in 
+a decree for dissolution of marriage. In contrast, if marriage is dissolved by 
+the Court at the instance of the wife without any valid reason or without any 
+fault of her husband, the wife is invariable required to surrender her 
+complete dower. If both the parties are partly at fault, the amount of 
+surrender of dower can be reduced, proportionately by the Court as the facts 
+and circumstances of the case may warrant. In short, the Court had the 
+discretion to determine the quantum of return or surrender of dower in a case 
+of dissolution of marriage or Khula depending upon the facts and 
+circumstances of the case. Therefore, when divergent pleadings regarding 
+entitlement or surrender of dower are taken by the parties in a suit for 
+dissolution of marriage, the proper course is to decide the same after 
+recording of evidence. For reference see cases titled, “Dr. Anees Ahmad v. 
+Mst. Uzma” (PLD 1998 Lahore 52); “Khalid Mahmood v. Anees Bibi and 
+2 others” (PLD 2007 Lahore 626); “Muhammad Kamran v. Mst. Samera 
+7 
+W. P. No. 12505 / 2020  
+ 
+Majeed and others” (2018 YLR 1251); “Mst. Saima Irum and 3 others v. 
+Tariq Javed and another” (2006 MLD 83); and “Mst. Zahida Bi v. 
+Muhammad Maqsood” (1987 CLC 57).
+[…]
+13. 
+ 
+Before proceeding further, it is importantly recalled that the 
+Honorable Federal Shariat Court has already declared that there is no 
+specific Quranic Verse or authentic Hadith that provides a bar to exercise of 
+jurisdiction by a competent Court of law to adjudicate upon the case of 
+Khula filed by a wife against her husband in case titled, “Saleem Ahmad and 
+others v. Government of Pakistan through Attorney General of Pakistan and 
+2 others” (PLD 2014 Federal Shariat Court 43). The following 
+conclusions are extracted from the reading of the Imran Anwar Khan case:- 
+8 
+W. P. No. 12505 / 2020  
+ 
+(i) 
+There is no prescribed specific ceiling in Islam regarding 
+payment of compensation for seeking Khula in terms of return 
+or surrender of dower in cash or kind just as there is no 
+prescribed upper ceiling for fixation of dower; 
+(ii) 
+It is an established principle of Sharia that payment of dower 
+and undertakings of Nikah become due on consummation of 
+marriage and if not paid earlier are payable at the time of death, 
+divorce or dissolution of marriage; 
+(iii) Dower is wholly payable at the time of dissolution of marriage 
+except where in a case of Khula, the C</pre></details>
+          <details class="passage"><summary>Agent steps</summary><pre>🧭 Understood: intent=case_law, follow-up=none, written in English → answer in English
+🔎 Search query → &#x27;wife&#x27;s obligation to return dower (mahr) to obtain khula under Pakistani law&#x27;
+⚡ Dispatch → search_case_law
+✅ Sufficient results (best_score=0.87)
+🧪 Grounding verification passed: evidence is sufficient for synthesis.
+🧪 Relevance gate skipped — strong match (top score 0.87 ≥ 0.75)
+✍️  Synthesizing final answer (3252 chars) from 1 tool result(s)</pre></details>
+        </section>
+        <section class="detail" id="q-stat-02">
+          <h3><span class="qid">stat-02</span> <span>What makes an agreement a contract under Section 10 of the Contract Act, 1872?</span></h3>
+          <div class="score-row"><span class="chip good">Faithfulness 1.00</span><span class="chip good">Answer relevancy 0.88</span><span class="chip good">Context precision 1.00</span><span class="chip good">Context recall 1.00</span><span class="chip fair">Factual correctness 0.73</span></div>
+          <div class="cols">
+            <div><h4>Justice AI's answer</h4><div class="answer">An agreement becomes a contract under Section 10 of the Contract Act, 1872, when it is made by the free consent of parties competent to contract, for a lawful consideration, with a lawful object, and is not expressly declared void by law. This means the parties must agree voluntarily, be legally capable of contracting, and the agreement must have a lawful purpose and consideration (Federal Government Employees Housing Authority v. Granite Enterprises (Pvt) Ltd, Islamabad High Court, 2025; Said Rasool v. Maqbool Ahmed, Supreme Court of Pakistan, 2023).
+
+The law defines an agreement as a promise or set of promises forming the consideration for each other, and a contract as an agreement enforceable by law (Contract Act, 1872, Sections 2(e), 2(h), and 10). The essential elements include mutual consent (consensus ad idem), competence of parties (age of majority and sound mind), lawful consideration, and lawful object. The consent must be free, not caused by coercion or fraud (Contract Act, 1872; Rao Abdul Rehman v. Muhammad Afzal, Supreme Court of Pakistan, 2023).
+
+The courts have held that contracts may be oral or written, and the absence of writing or signatures does not invalidate a contract unless a specific law requires it (Muhammad Sattar v. Tariq Javaid &amp; others, Supreme Court of Pakistan, 2016). The intention to be legally bound can be inferred from the parties’ conduct and objective manifestations of consent (Said Rasool v. Maqbool Ahmed, 2023). However, where the law requires contracts to be in writing or witnessed, those formalities must be observed.
+
+Key provisions involved are:
+- Section 10: All agreements are contracts if made by free consent of competent parties, for lawful consideration and object, and not declared void.
+- Section 11: Competence to contract (majority, sound mind, no disqualification).
+- Section 13 and 14: Consent and free consent.
+- Sections 8 and 9: Acceptance and proposal can be express or implied.
+
+To establish a valid contract under Section 10:
+- Ensure parties are competent (majority and sound mind).
+- Confirm free consent without coercion or fraud.
+- Verify lawful consideration and lawful object.
+- Observe any statutory requirements for writing or registration if applicable.
+
+The bottom line is that an agreement meeting these criteria under Section 10 of the Contract Act, 1872, is a valid contract enforceable by law.</div></div>
+            <div><h4>Reference answer</h4><div class="answer ref">Under Section 10 of the Contract Act, 1872, all agreements are contracts if they are made by the free consent of parties competent to contract, for a lawful consideration and with a lawful object, and are not expressly declared to be void by the Act. This does not affect any other law requiring a contract to be in writing, made in the presence of witnesses, or registered. The Supreme Court has held that the essentials of a valid contract are an offer communicated, its unconditional acceptance and consideration, and that a contract need not be in writing and may even be oral.</div>
+                 <p class="muted small">Based on: Contract Act, 1872, Federal Government Employees Housing Authority v. Granite Enterprises (Islamabad High Court, 2025), Muhammad Sattar v. Tariq Javaid (2017 SCMR 98) · <b>not yet reviewed by a person</b></p></div>
+          </div>
+          
+          
+          <h4>Sources shown to the user</h4><ul class="sources"><li>Contract Act, 1872 <span class='muted'>Federal Legislature 1872</span></li><li>Federal Government Employees Housing Authority VS Granite Enterprises (Pvt) Ltd <span class='muted'>Islamabad High Court 2025</span></li><li>Rao Abdul Rehman v. Muhammad Afzal, etc <span class='muted'>Supreme Court of Pakistan 2023</span></li><li>Said Rasool v. Maqbool Ahmed (deceased) through his L.Rs., etc <span class='muted'>Supreme Court of Pakistan 2023</span></li><li>NASIR ALI VS MST. RAHEELA MAHDI <span class='muted'>Lahore High Court 2024</span></li><li>Muhammad Sattar v. Tariq Javaid &amp; others <span class='muted'>Supreme Court of Pakistan 2016</span></li></ul>
+          <h4>Passages the answer was written from (6)</h4><details class="passage"><summary>Passage 1: [Doc 1 of 6] Contract Act, 1872 | federal_law | Federal Legislature | 1872 | score=0.875 | pdf_url=https://pakistancode.gov.pk/pdffiles/admi</summary><pre>[Doc 1 of 6] Contract Act, 1872 | federal_law | Federal Legislature | 1872 | score=0.875 | pdf_url=https://pakistancode.gov.pk/pdffiles/administrator8332a6df32386960ac7d81a5cf7aade2.pdf
+[CASE INFO]
+Case: Contract Act, 1872
+
+[PASSAGE]
+[LAW] Contract Act, 1872 | Federal Legislature | 1872
+
+CHAPTER XI
+OF PARTNERSHIP
+239 to 266. [Repealed]
+SCHEDULE [Repealed]
+Page 10 of 65
+
+THE CONTRACT ACT, 1872
+ACT NO. IX OF 1872
+[25th April, 1872]
+Preamble: WHEREAS it is expedient to define and amend certain parts of the law relating to
+contracts; It is hereby enacted as follows:___
+PRELIMINARY
+1. Short title. This Act may be called the 1[*] Contract Act, 1872.
+Extent and Commencement. It extends to 2[the whole of Pakistan]; and it shall come into
+force on the first day of September, 1872.
+Enactments repealed. 3[* * *] Nothing herein contained shall affect the provisions of any
+Statute, Act or Regulation not hereby expressly repealed, nor any usage or custom of trade, nor any
+incident of any contract, not inconsistent with the provisions of this Act.
+2. Interpretation clause. In this Act the following words and expressions are used in the
+following senses, unless a contrary intention appears from the context :____
+(a)
+
+When one person signifies to another his willingness to do or to abstain from
+doing anything, with a view to obtaining the assent of that other to such act or
+abstinence, he is said to make a proposal:
+
+(b)
+
+When the person to whom the proposal is made signifies his assent thereto, the
+proposal is said to be accepted. A proposal, when accepted becomes a
+promise:
+
+(c)
+
+The person making the proposal is called the “promisor,” and the person
+accepting the proposal is called the “promisee”:
+
+(d)
+
+When, at the desire of the promisor, the promisee or any other person has done
+or abstained from doing, or does or abstains from doing, or promises to do or
+to abstain from doing, something, such act or abstinence or promise is called a
+consideration for the promise:
+
+(e)
+
+Every promise and every set of promises, forming the consideration for each
+other, is an agreement:
+
+(f)
+
+Promises which form the consideration or part of the consideration for each
+other are called reciprocal promises:
+
+1
+2
+3
+
+Omitted by the Adaptation of Central Acts and Ordinances Order, 1949 (Order No. 4 of 1949), Art. 3 &amp; Sch..
+Subs. by the Central Laws (Statute Reform) Ordinance, 1960 (XXI of 1960), s. 3 and 2nd Sch. (with effect from the 14th October, 1955).
+Rep. by the Repealing and Amending Act, 1914 (X of 1914), s. 3 and 2nd Sch.
+
+Page 11 of 65
+
+(g)
+
+An agreement not enforceable by law is said to be void:
+
+(h)
+
+An agreement enforceable by law is a contract:
+
+(i)
+
+An agreement which is enforceable by law at the option of one or more of the
+parties thereto, but not at the option of the other or others, is a voidable
+contract:
+
+(j)
+
+A contract which ceases to be enforceable by law becomes void when it ceases
+to be enforceable.
+_______
+[…]
+CHAPTER II
+OF CONTRACTS, VOIDABLE CONTRACTS AND VOID AGREEMENTS
+10. What agreements are contracts. All agreements are contracts if they are made by the
+free consent of parties competent to contract, for a lawful consideration and with a lawful object, and
+are not hereby expressly declared to be void.
+Nothing herein contained shall affect any law in force in 1[Pakistan], and not hereby
+expressly repealed, by which any contract is required to be made in writing or in the presence of
+witnesses, or any law relating to the registration of documents.
+11. Who are competent to contract. Every person is competent to contract who is of the age
+of majority according to the law to which he is subject, and who is of sound mind, and is not
+disqualified from contracting by any law to which he is subject.
+12. What is a sound mind for the purposes of contracting. A person is said to be of sound
+mind for the purpose of making a contract if, at the time when he makes it, he is capable of
+understanding it and of forming a rational judgment as to its effect upon his interests.
+A person who is usually of unsound mind, but occasionally of sound mind, may make a
+contract when he is of sound mind.
+A person who is usually of sound mind, but occasionally of unsound mind, may not make a
+contract when he is of unsound mind.
+Illustrations
+(a)
+
+A patient in a lunatic asylum, who is at intervals of sound mind, may contract
+during those intervals.
+
+(b)
+
+A sane man, who is delirious from fever or who is so drunk that he cannot
+understand the terms of a contract or form a rational judgment as to its effect
+on his interests, cannot contract whilst such delirium or drunkenness lasts.
+
+1
+
+Subs. by the Central Laws (Statute Reform) Ordinance, 1960 (XXI of 1960), s. 3 and 2nd Sch. (with effect from the 14th October, 1955).
+
+Page 14 of 65
+
+13. “Consent” defined. Two or more persons are said to consent when they agree upon the
+same thing in the same sense.
+14. “Free consent” defined. Consent is said to be free when it is not caused by—
+(1)
+
+coercion,
+…[passage truncated]</pre></details><details class="passage"><summary>Passage 2: [Doc 2 of 6] Federal Government Employees Housing Authority VS Granite Enterprises (Pvt) Ltd | isb_case | Islamabad High Court | 2025 | scor</summary><pre>[Doc 2 of 6] Federal Government Employees Housing Authority VS Granite Enterprises (Pvt) Ltd | isb_case | Islamabad High Court | 2025 | score=0.837 | pdf_url=https://mis.ihc.gov.pk/attachments/judgements/193745/1/FGEHA_Civil_Revision_76_of_2025_638834255043662280.pdf
+[CASE INFO]
+Case: Federal Government Employees Housing Authority VS Granite Enterprises (Pvt) Ltd
+Case No: Civil Revision-76-2025
+Judge(s): Babar Sattar
+Parties: Federal Government Employees Housing Authority v. Granite Enterprises (Pvt) Ltd
+Date: 2025-05-19
+
+[PASSAGE]
+[CASE] Federal Government Employees Housing Authority VS Granite Enterprises (Pvt) Ltd | Islamabad High Court | 2025 | Citation Awaited
+
+Section 10 of the Contract Act defines contracts and 
+provides the following: 
+10. What agreements are contracts. All agreements are 
+contracts if they are made by the free consent of parties 
+competent to contract, for a lawful consideration and with a 
+lawful object, and are not hereby expressly declared to be void. 
+Nothing herein contained shall affect any law in force in 
+Pakistan, and not hereby expressly repealed, by which any 
+contract is required to be made in writing or in the presence of 
+witnesses, or any law relating to the registration of documents. 
+ 
+20.</pre></details><details class="passage"><summary>Passage 3: [Doc 3 of 6] Rao Abdul Rehman v. Muhammad Afzal, etc | sc_case | Supreme Court of Pakistan | 2023 | score=0.803 | pdf_url=https://www.suprem</summary><pre>[Doc 3 of 6] Rao Abdul Rehman v. Muhammad Afzal, etc | sc_case | Supreme Court of Pakistan | 2023 | score=0.803 | pdf_url=https://www.supremecourt.gov.pk/downloads_judgements/c.p._1133_l_2016.pdf
+[CASE INFO]
+Case: Rao Abdul Rehman v. Muhammad Afzal, etc
+Case No: C.P.L.A.1133-L/2016
+Judge(s): MR. JUSTICE SAYYED MAZAHAR ALI AKBAR NAQVI, MR. JUSTICE MUHAMMAD ALI MAZHAR, MR. JUSTICE SHAHID WAHEED
+Citation: 2023 SCMR 815
+Parties: Rao Abdul Rehman v. Muhammad Afzal, etc
+Date: 16-01-2023
+
+[PASSAGE]
+[CASE] Rao Abdul Rehman v. Muhammad Afzal, etc | Supreme Court of Pakistan | 2023 | 2023 SCMR 815
+
+10. Another crucial aspect is what constitutes a valid contract
+between the parties for which undoubtedly one of the essential
+conditions is consensus ad idem for settling all the terms of the
+contract but, upon perusal of the alleged agreements to sell, we
+have found that no proper description or even exact location was
+mentioned to identify the suit property, instead the description of
+the suit property was jotted down by the petitioner in the plaint
+rather than in the alleged agreements. Fundamentally the phrase
+“consensus ad idem” in the law of contract connotes and epitomizes a
+meeting of the minds inured to describe the intention of the parties.
+This also speaks of the set of circumstances where there is a reciprocal
+understanding in the manifestation of the contract. Section 10 of the
+Contract Act, 1872 does not exclude an oral contract from being
+enforced, although in the case of an oral contract the clearest and
+more satisfactory evidence would be required by the Court. Admittedly
+the co-owner, Muhammad Afzal (respondent No.1), had neither signed
+the alleged agreement, nor he was privy to the alleged sale agreements.
+It is also an admitted position that the property was not partitioned by
+metes and bounds which means that no specific portion of the
+property was earmarked for signifying the specific share or location
+which could be dealt with independently, including the sale of an
+individual share out of the joint property. On this score or count also
+there was no valid contract for the whole property and the agreements
+were defective with inherent lacunas. According to Black’s Law
+Dictionary (5th Edition), a ‘contract’ is “an agreement between two or
+more persons which creates an obligation to do or not to do a
+particular thing. Its essentials are competent parties, subject matter of
+a legal consideration, mutuality of agreement and mutuality of
+obligations.” Anson has defined the word contract in the following
+words: “A contract consists in an actionable promise or promises.
+Every such promise involves two parties, a promisor and promisee,
+and an expression of a common intention and expectation as to the act
+or forbearance promised”. Ref: Anson’s Law of Contract, 23rd Edition,
+CP.No.1133-L/2016
+
+by A.G. Guest, 1971, p. 23. According to Treitel, “A contract is an
+agreement giving rise to obligations which are enforced or recognized
+by law. The factor which distinguishes contractual from other legal
+obligations is that they are based on agreement of the contracting
+parties. This proposition remains generally true, in spite of the fact
+that it is subject to a number of important qualifications.” Ref: G.H.
+Treitel, The Law of Contract, Tenth Edition (1999) by Sir Guenter
+Treitel, Sweet &amp; Maxwell (1999), p. 1. (Source: Moitra’s Law of
+Contract &amp; Specific Relief, Fifth Edition). No doubt to constitute a valid
+contract one of the conditions is “consensus ad idem” which must exist
+with regard to the terms and conditions of the contract and, in case of
+any ambiguity, it may adversely reflect on its very existence. In fact it
+is a Latin term in the law of contract that means the existence of
+meeting of minds of all parties involved which is the elementary
+constituent for the enforcement and execution of a contract and in
+case of no consensus ad idem there shall be no binding contract and in
+case of any palpable inexactitude or obliviousness in the settled terms
+and conditions then there shall be no probability to get a hold of any
+outcome of such defective agreement. Where an effective and
+enforceable contract is not structured by the parties, it is not the
+domain or province of the Court to make out a contract for them but
+the lis would be decided on the basis of terms and conditions agreed
+and settled down in the contract. The decree for specific performance
+may not be passed if the substratum of the contract suffers from
+shortcoming
+or
+legal
+infirmities
+which
+renders
+the
+contract
+unacceptable and unenforceable.</pre></details><details class="passage"><summary>Passage 4: [Doc 4 of 6] Said Rasool v. Maqbool Ahmed (deceased) through his L.Rs., etc | sc_case | Supreme Court of Pakistan | 2023 | score=0.792 | pdf</summary><pre>[Doc 4 of 6] Said Rasool v. Maqbool Ahmed (deceased) through his L.Rs., etc | sc_case | Supreme Court of Pakistan | 2023 | score=0.792 | pdf_url=https://www.supremecourt.gov.pk/downloads_judgements/c.a._102_l_2017.pdf
+[CASE INFO]
+Case: Said Rasool v. Maqbool Ahmed (deceased) through his L.Rs., etc
+Case No: C.A.102-L/2017
+Judge(s): Mr. Justice Jamal Khan Mandokhail
+Citation: 2023 SCMR 1390
+Parties: Said Rasool v. Maqbool Ahmed (deceased) through his L.Rs., etc
+Date: 17-05-2023
+
+[PASSAGE]
+[CASE] Said Rasool v. Maqbool Ahmed (deceased) through his L.Rs., etc | Supreme Court of Pakistan | 2023 | 2023 SCMR 1390
+
+Section 2(h) of the Contract Act, 1871 (“Contract Act”) states that
+an “…agreement enforceable by law is a contract”. Similarly,
+section 10 of the Contract Act stipulates that “All agreements are
+contracts, if they are made by the free consent of the parties,
+C.A. No. 102-L of 2017
+competent to contract, for a lawful consideration with a lawful
+object, and not hereby expressly to be void.” Therefore, the basic
+elements required to be proved for a valid agreement to be legally
+enforceable are mutual consent, expressed by a valid offer and
+acceptance; adequate consideration; capacity; and for it to be
+subject to the laws of the jurisdiction. These may be determined by
+looking at the objective manifestations of the intent of the parties
+as gathered by their expressed words and deeds, as well as
+objective evidence establishing that the parties intended to be
+bound. An agreement may be oral or in writing. A written
+agreement is an instrument whereby parties perform the act of
+declaring their consent as to any act or thing to be done by some
+or all parties through the process of writing. Where the parties to
+an agreement intend not to be bound until their agreement is
+reduced to writing and signed, neither party is bound until the
+writing is executed. If the written agreement pertains to financial
+or future obligations, it is to be compulsorily attested by two men
+or one man and two women, as provided by Article 17(2) of the
+Qanun-e-Shahadat Order, 1984 (“QSO, 1984”) which is sine qua
+non for a valid agreement. Such written document should not be
+used as evidence until the attesting witnesses are called for the
+purpose of proving its execution in a manner enumerated in Article
+79 of the QSO, 1984.1
+
+3.
+However, this situation must be distinguished from
+that in which the parties intend to bind themselves orally or by
+their conduct, but have the further intention of reducing their
+agreement to a writing after the oral agreement is made. In such
+case, the written agreement of the completed oral contract remains
+unaffected even if it is not signed by either party. The requirement
+of signing the agreement by the parties is to show their free
+consent and intention to be legally bound by their oral offer and
+acceptance. In circumstances where the agreement is reduced into
+writing and is not signed by either or one of the parties, it may still
+be valid and enforceable, however, its legal effect will be limited
+
+1 PLD 2021 SC 538
+C.A. No. 102-L of 2017
+and the enforceability may be more difficult to establish in such
+case. It is, therefore, necessary that it must be pleaded in the
+pleadings and the requirements of a valid contract must be proved
+through cogent evidence by the party relying upon it.2 These
+factors will be considered by the courts in determining the intent of
+the parties and steps partially taken for giving effect to the
+agreement. Thus, if the courts are satisfied that the party relying
+upon an unsigned agreement has proved the necessary ingredients
+for its validity, it may be enforced in favour of the party claiming its
+performance.</pre></details><details class="passage"><summary>Passage 5: [Doc 5 of 6] NASIR ALI VS MST. RAHEELA MAHDI | lhc_case | Lahore High Court | 2024 | score=0.745 | pdf_url=https://sys.lhc.gov.pk/appjudgmen</summary><pre>[Doc 5 of 6] NASIR ALI VS MST. RAHEELA MAHDI | lhc_case | Lahore High Court | 2024 | score=0.745 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2024LHC5787.pdf
+[CASE INFO]
+Case: NASIR ALI VS MST. RAHEELA MAHDI
+Case No: Civil Revision-Civil Revision (Against Decree) u/s. 115, C.P.C. 241-22
+Judge(s): Mr. Justice Anwaar Hussain 27-11-2024 2024 LHC 5787 2025 CLC 885 [Lahore (Rawalpindi Bench)]
+Citation: 2024 LHC 5787
+
+[PASSAGE]
+[CASE] NASIR ALI VS MST. RAHEELA MAHDI | Lahore High Court | 2024 | 2024 LHC 5787
+
+4. 
+Arguments heard. Record perused.  
+ 
+ 
+C.R. No.241-D/2022 
+3 
+ 
+ 
+ 
+5. 
+The nub of the matter is to examine whether the respondent 
+was able to prove the execution of the oral agreement to sell in her 
+favour.  
+6. 
+It is settled principle of law that the parties can execute a 
+lawful contract, orally or in writing, and such oral agreements are 
+enforceable, provided legal requirements are fulfilled as envisaged 
+under Section 2(b) read with Section 10 of the Contract Act, 1872 
+(“the Act, 1872”), which contemplate that all the agreements are 
+valid and enforceable if entered into by parties who are competent to 
+contract i.e., having age of majority and of sound mind in terms of</pre></details><details class="passage"><summary>Passage 6: [Doc 6 of 6] Muhammad Sattar v. Tariq Javaid &amp; others | sc_case | Supreme Court of Pakistan | 2016 | score=0.710 | pdf_url=https://www.supre</summary><pre>[Doc 6 of 6] Muhammad Sattar v. Tariq Javaid &amp; others | sc_case | Supreme Court of Pakistan | 2016 | score=0.710 | pdf_url=https://www.supremecourt.gov.pk/downloads_judgements/C.A._56_2011.pdf
+[CASE INFO]
+Case: Muhammad Sattar v. Tariq Javaid &amp; others
+Case No: C.A.56/2011
+Judge(s): MR. JUSTICE ANWAR ZAHEER JAMALI, CJ, MR. JUSTICE AMIR HANI MUSLIM, MR. JUSTICE SH. AZMAT SAEED, MR. JUSTICE MANZOOR AHMAD MALIK, MR. JUSTICE FAISAL ARAB
+Citation: 2017 SCMR 98
+Parties: Muhammad Sattar v. Tariq Javaid &amp; others
+Date: 11-11-2016
+
+[PASSAGE]
+[CASE] Muhammad Sattar v. Tariq Javaid &amp; others | Supreme Court of Pakistan | 2016 | 2017 SCMR 98
+
+6.
+
+Heard and perused the available record.
+7.
+
+The primary and basic law relating to the
+contracts is obviously the Contract Act, 1872. The
+essentials of a valid contract are an offer communicated,
+the
+unconditional
+acceptance
+of
+such
+offer
+and
+consideration. There is nothing in the Contract Act, 1872
+which requires that such offer and acceptance must
+necessarily be in writing or form a single document. The
+law i.e. the Contract Act, 1872 envisages a valid
+enforceable contract, which may even be oral. A perusal of
+the provisions of the said enactment also reveals that both
+the proposal and its acceptance may be expressed or
+implied, as is apparent from Section 9 thereof, which
+reads as under:
+
+“9.
+Promises, express and implied.- In
+so far as the proposal or acceptance of any
+promise is made in words, the promise is
+said to be express. In so far as such
+proposal or acceptance is made otherwise
+than in words, the promise is said to be
+implied.”
+
+8.
+
+Similarly, once an offer is communicated, the
+performance of the conditions of the proposal or the
+acceptance of any consideration or part thereof offered
+CAs.56 of 2011, etc.
+with the proposal also constitutes an acceptance so as to
+bring about a valid binding contract between the parties,
+as is obvious from the bare reading of Section 8 of the
+Contract Act, 1872, which is reproduced hereunder for
+ease of reference:
+
+“8.
+Acceptance
+by
+performing
+conditions or receiving consideration.-
+Performance
+of
+the
+conditions
+of
+a
+proposal,
+or
+the
+acceptance
+of
+any
+consideration for a reciprocal promise
+which may be offered with a proposal, is
+an acceptance of the proposal.”
+
+9.
+
+No doubt, the Contract Act, 1872 may not be the
+only law applicable to the transactions enumerating the
+requisite formalities. Various special laws pertaining to
+certain specified species of contracts also hold the field
+and the provisions thereof may envisage certain additional
+requirements to bring about a valid contract. An obvious
+example is Section 54 of the Transfer of Property Act,
+1882, which requires that a contract of sale of immovable
+property of a value of more than one hundred rupees must
+necessarily be reduced in writing. This condition only
+applies where the Transfer of Property Act, 1882 is
+applicable through a Notification in terms of Section 1
+thereof. The said provision of the Transfer of Property Act,
+1882 is not applicable to the entire length and breadth of
+Pakistan and oral sales are recognized and enforced in
+CAs.56 of 2011, etc.
+various parts of Pakistan. Be that as it may, there is
+nothing in the Transfer of Property Act, 1882 or any other
+law, which requires that an Agreement to Sell of
+immovable property must necessarily be reduced into
+writing or be signed by the parties thereto.
+10.
+The Courts in Pakistan, while interpreting the
+various provisions applicable, more particularly, Sections
+8 and 9 of the Contract Act, 1872, have repeatedly and
+consistently held that the contracts in general do not
+require to be reduced into writing (except where otherwise
+specifically provided by law) and the offer and acceptance
+can also be implied from the conduct of the parties in
+terms of Sections 8 and 9 ibid and the absence of formal
+signatures does not effect the validity or enforceability of
+the Contract Act, 1872.</pre></details>
+          <details class="passage"><summary>Agent steps</summary><pre>🧭 Understood: intent=statutory_law, follow-up=none, written in English → answer in English
+🔎 Search query → &#x27;requirements for an agreement to become a contract under Section 10 of the Contract Act, 1&#x27;
+⚡ Dispatch → retrieve_with_full_pipeline
+✅ Sufficient results (best_score=0.88)
+🧪 Grounding verification passed: evidence is sufficient for synthesis.
+🧪 Relevance gate skipped — strong match (top score 0.88 ≥ 0.75)
+✍️  Synthesizing final answer (2392 chars) from 1 tool result(s)</pre></details>
+        </section>
+        <section class="detail" id="q-urdu-01">
+          <h3><span class="qid">urdu-01</span> <span dir="rtl" class="urdu">قتل کے مقدمے میں ایف آئی آر تاخیر سے درج ہونے کا ملزم پر کیا اثر پڑتا ہے؟</span></h3>
+          <div class="score-row"><span class="chip good">Faithfulness 1.00</span><span class="chip fair">Answer relevancy 0.74</span><span class="chip good">Context precision 1.00</span><span class="chip good">Context recall 1.00</span><span class="chip fair">Factual correctness 0.72</span></div>
+          <div class="cols">
+            <div><h4>Justice AI's answer</h4><div class="answer" dir="rtl" class="urdu">قتل کے مقدمے میں ایف آئی آر کی تاخیر کا ملزم پر منفی اثر پڑتا ہے اور یہ تاخیر عام طور پر استغاثہ کی کہانی پر شک پیدا کرتی ہے، جس کے نتیجے میں ملزم کو شک کا فائدہ دیا جاتا ہے۔ عدالتوں نے بارہا یہ واضح کیا ہے کہ ایف آئی آر استغاثہ کے مقدمے کی بنیاد ہوتی ہے اور اس کی بروقت اندراج بہت اہمیت رکھتا ہے۔ اگر ایف آئی آر میں تاخیر ہو تو یہ تاخیر استغاثہ کی کہانی کی صداقت پر سوال اٹھاتی ہے اور اس کا فائدہ صرف ملزم کو پہنچتا ہے۔
+
+*Lahore High Court* کے فیصلے *Karamat Ali v. The State* (2025 LHC 3719) میں عدالت نے کہا کہ &quot;اگر ایف آئی آر کی اندراج میں تاخیر ہو تو یہ شک پیدا کرتا ہے جو صرف ملزم کے حق میں ہوتا ہے۔&quot; عدالت نے مزید کہا کہ ایف آئی آر مقدمے کی بنیاد ہوتی ہے اور تاخیر سے درج شدہ ایف آئی آر استغاثہ کے مقدمے کو کمزور کرتی ہے۔ اسی طرح *Shakeel Ahmad v. The State* (2025 LHC 3222) میں بھی عدالت نے کہا کہ &quot;بغیر کسی معقول وجہ کے ایف آئی آر کی تاخیر استغاثہ کی کہانی پر شک پیدا کرتی ہے اور ملزم کو شک کا فائدہ دیا جاتا ہے۔&quot;
+
+اسی اصول کو *Muhammad Azam v. The State* (2025 LHC 4586) میں بھی دہرانے کے ساتھ عدالت نے واضح کیا کہ اگر ایف آئی آر کی اندراج میں تاخیر ہو اور اس کی کوئی معقول وضاحت نہ ہو تو یہ استغاثہ کی کہانی کی ساکھ کو نقصان پہنچاتی ہے اور مقدمہ کمزور ہو جاتا ہے۔ مزید برآں، *Mazhar Hussain v. State* (2019 LHC 4456) میں سپریم کورٹ کے فیصلے کا حوالہ دیتے ہوئے کہا گیا کہ &quot;اگر ایف آئی آر کی اندراج میں تاخیر ہو تو یہ شک پیدا ہوتا ہے جو صرف ملزم کے حق میں ہوتا ہے اور ایف آئی آر جو تفتیش کے بعد درج کی گئی ہو اس کی ساکھ نہیں ہوتی۔&quot;
+
+یہ تمام فیصلے اس بات کی تصدیق کرتے ہیں کہ قتل کے مقدمے میں ایف آئی آر کی بروقت اندراج استغاثہ کے مقدمے کی مضبوطی کے لیے ناگزیر ہے اور تاخیر کی صورت میں ملزم کو شک کا فائدہ دیا جاتا ہے۔
+
+- ایف آئی آر کی تاخیر استغاثہ کی کہانی پر شک پیدا کرتی ہے۔
+- تاخیر کی کوئی معقول وضاحت نہ ہونے پر ملزم کو شک کا فائدہ دیا جاتا ہے۔
+- ایف آئی آر مقدمے کی بنیاد ہوتی ہے، اس لیے اس کی بروقت اندراج ضروری ہے۔
+- تفتیش کے بعد درج شدہ ایف آئی آر کی ساکھ کمزور ہوتی ہے۔</div></div>
+            <div><h4>Reference answer</h4><div class="answer ref">An unexplained delay in lodging the FIR in a murder case casts suspicion on the prosecution story, because the FIR is the cornerstone of the prosecution case; the doubt it creates goes to the benefit of the accused, and courts have treated a long unexplained delay as suggesting the occurrence was unwitnessed or that the account was made up after deliberation. Where the delay is satisfactorily explained, for example by the time spent taking the injured to hospital, it is not held against the complainant.</div>
+                 <p class="muted small">Based on: Karamat Ali v. The State (2025 LHC 3719), Shakeel Ahmad v. The State (Lahore High Court, 2025), Muhammad Amjad Shahzad v. Muhammad Akhtar Shahzad (Supreme Court, 2022) · <b>not yet reviewed by a person</b></p></div>
+          </div>
+          
+          
+          <h4>Sources shown to the user</h4><ul class="sources"><li>Karamat Ali Vs The State etc. <span class='muted'>Lahore High Court 2025</span></li><li>Shakeel Ahmad Vs The State <span class='muted'>Lahore High Court 2025</span></li><li>Muhammad Azam Vs The State <span class='muted'>Lahore High Court 2025</span></li><li>MAZHAR HUSSAIN VS STATE ETC <span class='muted'>Lahore High Court 2019</span></li></ul>
+          <h4>Passages the answer was written from (4)</h4><details class="passage"><summary>Passage 1: [Doc 1 of 4] Karamat Ali Vs The State etc. | lhc_case | Lahore High Court | 2025 | score=0.894 | pdf_url=https://sys.lhc.gov.pk/appjudgments</summary><pre>[Doc 1 of 4] Karamat Ali Vs The State etc. | lhc_case | Lahore High Court | 2025 | score=0.894 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2025LHC3719.pdf
+[CASE INFO]
+Case: Karamat Ali Vs The State etc.
+Case No: Crl. Appeal 5394/22
+Judge(s): Mr. Justice Farooq Haider 02-06-2025 2025 LHC 3719 PLJ 2025 Cr.C 645 (DB) (Lahore High Court, Lahore), 2026 YLR 266 (Lahore)
+Citation: 2025 LHC 3719
+
+[PASSAGE]
+[CASE] Karamat Ali Vs The State etc. | Lahore High Court | 2025 | 2025 LHC 3719
+
+delay in lodging of FIR to be fatal and castes a suspicion on the 
+prosecution story, extending the benefit of doubt to the accused. It has been 
+held by this Court that a FIR is always treated as a cornerstone of the 
+prosecution case to establish guilt against those involved in a crime; thus, 
+it has a significant role to play. If there is any delay in lodging of a FIR 
+and commencement of investigation, it gives rise to a doubt, which, of 
+course, cannot be extended to anyone else except to the accused…” 
+ 
+Furthermore, though as per FIR (Ex.PA), application for registration of the 
+case was received from Muhammad Amin (complainant/PW-3) at 05:40 p.m. 
+and FIR was recorded at 05:40 p.m. yet it is noteworthy here that 
+Muhammad Amin complainant while appearing as PW-3 during trial of the 
+case stated in categorical terms during cross-examination that he reached 
+Police Station at about 12:00 a.m. (night) on the day of occurrence and 
+ 
+Criminal Appeal No.5394/2022 
+Murder Reference No.12/2022 
+ 
+ 
+ 
+7
+thereafter proceedings regarding the occurrence were conducted; relevant 
+portion of the statement of Muhammad Amin (complainant/PW-3) in this 
+regard is hereby reproduced as under:- 
+“I reached PS at about 12:00 am of night on the day of occurrence 
+thereafter all the proceedings in connection of this occurrence were 
+conducted.” 
+ 
+ 
+As per statement of Dr. Anam Saleem (PW-8), dead body of Fozia 
+Bibi (deceased of the case) was received in the dead house on 31.08.2020 at 
+08:30 p.m. whereas autopsy was conducted on the next day i.e. 01.09.2020 at 
+10:00 a.m. So, reason for delay in conducting autopsy was that police papers 
+were received at 09:00 a.m. on 01.09.2020; relevant portion of the statement 
+of PW-8 in this regard is hereby reproduced as follows:- 
+“On 01.09.2020 I was posted at DHQ Hospital Nankana 
+Sahib. According to record the dead body of deceased Fozia Bibi 
+was received in dead house on 31.08.2020 at 08:30 PM brought by 
+Rafaqat Ali 1104-C. It was a dead body of deceased Fozia Bibi wife 
+of Muhammad Amin aged about 30/32 years, caste Chubail, r/o 
+Maliwal. The complete police papers were received at 09:00 am on 
+01.09.2020 and I conducted the autopsy on the same day at about 
+10:00 am.” 
+ 
+meaning thereby that as per own case of prosecution, occurrence took place 
+at 10:30 a.m. on 31.08.2020 whereas postmortem examination over dead 
+body of the deceased was conducted on the next day at about 10:00 a.m. i.e. 
+after the delay of 23½ hours.  
+ 
+This state of affairs reflects that none of the cited eye witnesses 
+including the complainant was present at the “time &amp; place” of occurrence 
+and time has been consumed for procuring, inducing and engaging the 
+witnesses, tailoring story for the case of prosecution and then registering the 
+case in its present form after much delay and in above scenario, First 
+Information Report (crime report), which is cornerstone of the case of the 
+prosecution, cannot be termed as promptly recorded and such sort of FIR 
+cannot provide any support to the case of prosecution  rather superstructure 
+i.e. case of prosecution raised on the basis of such sort of FIR is bound to fall 
+and in this regard, cases of “HAROON SHAFIQUE versus The STATE 
+and others”(2018 SCMR 2118), “MUHAMMAD RAFIQUE alias 
+FEEQA versus The STATE” (2019 SCMR 1068), “SUFYAN NAWAZ 
+ 
+Criminal Appeal No.5394/2022 
+Murder Reference No.12/2022 
+ 
+ 
+ 
+8
+and another versus The STATE and others” (2020 SCMR 192) and 
+“MUHAMMAD ADNAN and another versus The STATE and others”</pre></details><details class="passage"><summary>Passage 2: [Doc 2 of 4] Shakeel Ahmad Vs The State | lhc_case | Lahore High Court | 2025 | score=0.888 | pdf_url=https://data.lhc.gov.pk/reported_judgm</summary><pre>[Doc 2 of 4] Shakeel Ahmad Vs The State | lhc_case | Lahore High Court | 2025 | score=0.888 | pdf_url=https://data.lhc.gov.pk/reported_judgments/download_file/9864/2025LHC3222.pdf
+[CASE INFO]
+Case: Shakeel Ahmad Vs The State
+Case No: Jail Appeal 22031/22
+Judge(s): Mr. Justice Raja Ghazanfar Ali Khan 20-03-2025 2025 LHC 3222 2025 YLR 2337 (Lahore)
+Citation: 2025 LHC 3222
+
+[PASSAGE]
+[CASE] Shakeel Ahmad Vs The State | Lahore High Court | 2025 | 2025 LHC 3222
+
+7. 
+The learned counsel for the appellant has primarily argued that 
+the conviction under Section 302(b) PPC is not sustainable on the 
+grounds that the learned trial court placed undue reliance on the 
+appellant’s qualified plea of guilt under Section 265-E Cr.P.C., while 
+disregarding the substituted version of events presented by the 
+appellant and the lack of independent corroboration for the 
+prosecution’s case against him for the commission of murder. It was 
+further contended that the prosecution failed to establish the 
+appellant’s intention to commit murder or his participation in an 
+unlawful assembly with the common object of committing murder. 
+8. 
+Conversely, the learned Deputy Prosecutor General supported 
+the judgment of the learned trial court by arguing that the appellant’s 
+plea of guilt, coupled with the ocular and medical evidence, 
+sufficiently established his guilt for the commission of the offence 
+under Section 302(b) PPC. The complainant’s counsel has adopted the 
+said arguments and prayed for the upholding of the death sentence. 
+9. 
+We have carefully considered the arguments advanced by the 
+learned counsel for the appellant, learned Deputy Prosecutor General 
+Criminal Appeal No.22031 of 2022 
+Murder Reference No.35 of 2022 
+7
+assisted by learned counsel for the complainant and also meticulously 
+examined the entire record of the learned trial court with their able 
+assistance. 
+10. 
+The prosecution, in brief, has structured its case to the effect 
+that on the fateful day appellant Shakeel Ahmad along with his co-
+accused Muhammad Musa, Salman alias Shan son of Khadim 
+Hussain, Salman alias Shan son of Bashir Ahmad, all armed with 
+clubs along with two un-known accused armed with firearm weapons 
+gathered in front of the house of the complainant Liaqat Ali (PW.1) 
+and started hitting his motorcycle. On hearing noise, he (PW.1) along 
+with Muhammad Saddique, Mohsin Ali, Amina Bibi and Mafia Bibi 
+came out of the house. Accused Shakeel prompted his co-accused not 
+to spare the complainant side.  Thereafter Musa inflicted club blows 
+which hit on head and right eye of Saddique. Shakeel Ahmad made 
+sota blow which hit on left arm of Ameena Bibi. Accused Salman 
+alias Shan son of Khadim Hussain made sota blows which hit Mafia 
+Bibi at her left arm and right shoulder. Accused Muhammad Musa 
+and Shan son of Bashir Ahmad inflicted sota blows which hit 
+complainant at his right and left eyes. The un-known accused persons 
+made aerial firing with their respective weapons.   
+11. 
+We have straightaway noticed that according to the complaint 
+(Exh.PA) lodged by Liaqat Ali complainant (PW.1), the occurrence in 
+this case took place on 29.01.2015 at about 1:30/2:00 P.M. and the 
+matter was reported to police on the following day i.e. 30.01.2015 at 
+about 12:35 P.M. at police station Shergarh situated at a distance of 15 
+K.M from the place of occurrence. There is an unexplained delay of 
+about twenty two hours and thirty five minutes in lodging of the FIR. 
+The aforementioned delay in the registration of F.I.R. gives 
+reasonable clue that either the incident remained un-witnessed or 
+narrator of ocular account had no previous acquaintance with the 
+actual assassin.  In this regard, guidance can be sought from the case 
+of “Mst. ASIA BIBI versus The STATE and others” (PLD 2019 
+Criminal Appeal No.22031 of 2022 
+Murder Reference No.35 of 2022 
+8
+Supreme Court 64) the relevant portion from paragraph No.29 of 
+said case law is hereby reproduced:- 
+“There is no cavil to the proposition, however, it is to be 
+noted that in absence of any plausible explanation, this 
+Court has always considered the delay in lodging of FIR 
+to be fatal and casts a suspicion on the prosecution story, 
+extending the benefit of doubt to the accused. It has been 
+held by this Court that a FIR is always treated as a 
+cornerstone of the prosecution case to establish guilt 
+against those involved in a crime; thus, it has a 
+significant role to play. If there is any delay in lodging of 
+a FIR and commencement of investigation, it gives rise 
+to a doubt, which, of course, cannot be extended to 
+anyone else except to the accused.”</pre></details><details class="passage"><summary>Passage 3: [Doc 3 of 4] Muhammad Azam Vs The State | lhc_case | Lahore High Court | 2025 | score=0.877 | pdf_url=https://sys.lhc.gov.pk/appjudgments/20</summary><pre>[Doc 3 of 4] Muhammad Azam Vs The State | lhc_case | Lahore High Court | 2025 | score=0.877 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2025LHC4586.pdf
+[CASE INFO]
+Case: Muhammad Azam Vs The State
+Case No: Jail Appeal 36927/22
+Judge(s): Mr. Justice Farooq Haider 30-06-2025 2025 LHC 4586 PLJ 2025 Cr.C 670 (DB) (Lahore High Court, Lahore), 2025 YLR 2312 (Lahore)
+Citation: 2025 LHC 4586
+
+[PASSAGE]
+[CASE] Muhammad Azam Vs The State | Lahore High Court | 2025 | 2025 LHC 4586
+
+7. 
+ 
+It has been noticed that as per case of prosecution, occurrence in 
+this case took place at 10:00 a.m. on 12.11.2020, however, application for 
+registration of F.I.R. (Ex.PA) was filed on 12.11.2020 at 7:20 p.m. and on 
+the basis of said application, F.I.R. (Ex.CW-2/A) was recorded at 7:20 p.m. 
+on 12.11.2020. Though it is mentioned in application (Ex.PA) that after the 
+occurrence, Altaf Hussain (deceased of the case) was taken to RHC 
+Baseerpur in unconscious condition where Doctor after medical treatment 
+referred him to DHQ Hospital, Okara wherefrom after providing first aid he 
+was referred to Lahore General Hospital and when complainant was taking 
+his brother to Lahore General Hospital, he expired near Manga Mandi but 
+neither any Medico-Legal Examination Certificate of Altaf Hussain issued 
+from RHC Baseerpur nor any Emergency Admission Register of RHC 
+Baseerpur was brought on the record by the prosecution so much so any 
+ 
+Criminal Appeal No.36927-J/2022 
+P.S.L.A. No.35019/2022 
+Murder Reference No.145/2022 
+ 
+ 
+ 
+5
+record showing medical treatment of Altaf Hussain in RHC Baseerpur is also 
+not available on the record; any record to show that Altaf Hussain was 
+referred from RHC Baseerpur to DHQ Hospital, Okara has also not been 
+brought on the record; record about provision of any first aid to Altaf 
+Hussain in DHQ Hospital, Okara has not been produced; similarly, any 
+referral slip to show that Altaf Hussain was referred to General Hospital, 
+Lahore is also not available on the record, therefore, any plausible reason to 
+justify delay in registration of the case has not been brought on the record by 
+the prosecution, hence, there is unexplained delay in registration of the case 
+which reflects that none of the cited eyewitnesses including the complainant 
+was present at the place of occurrence at the relevant time of occurrence. 
+First Information Report (crime report), which is cornerstone of the case of 
+the prosecution, cannot be termed as promptly recorded and such sort of FIR 
+cannot provide any support to the case of prosecution  rather superstructure 
+i.e. case of prosecution raised on the basis of such sort of FIR is bound to 
+fall. 
+It is well settled that when there is delay in reporting the 
+incident to the police, then prosecution is under obligation to explain such 
+delay and failure to do that will badly reflect upon the credibility of 
+prosecution version. In this regard, guidance has been sought from the case 
+of “Mst. ASIA BIBI versus The STATE and others” (PLD 2019 
+Supreme Court 64); relevant portion from paragraph No.29 of said case law 
+is hereby reproduced: - 
+“There is no cavil to the proposition, however, it is to be noted that 
+in absence of any plausible explanation, this Court has always 
+considered the delay in lodging of FIR to be fatal and castes a 
+suspicion on the prosecution story, extending the benefit of doubt to 
+the accused. It has been held by this Court that a FIR is always 
+treated as a cornerstone of the prosecution case to establish guilt 
+against those involved in a crime; thus, it has a significant role to 
+play. If there is any delay in lodging of a FIR and commencement 
+of investigation, it gives rise to a doubt, which, of course, cannot be 
+extended to anyone else except to the accused…” 
+ 
+Postmortem examination on the dead body of the deceased was conducted on 
+13.11.2020 at 01:40 a.m. and it is also relevant to mention here that 
+documents were also received from the police at 1:30 a.m. on 13.11.2020 
+which fact leads to the conclusion that documents were not ready, time was 
+ 
+Criminal Appeal No.36927-J/2022 
+P.S.L.A. No.35019/2022 
+Murder Reference No.145/2022 
+ 
+ 
+ 
+6
+consumed by the prosecution for preparing the same, therefore, postmortem 
+examination was conducted over the dead body of the deceased with delay,</pre></details><details class="passage"><summary>Passage 4: [Doc 4 of 4] MAZHAR HUSSAIN VS STATE ETC | lhc_case | Lahore High Court | 2019 | score=0.858 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2</summary><pre>[Doc 4 of 4] MAZHAR HUSSAIN VS STATE ETC | lhc_case | Lahore High Court | 2019 | score=0.858 | pdf_url=https://sys.lhc.gov.pk/appjudgments/2019LHC4456.pdf
+[CASE INFO]
+Case: MAZHAR HUSSAIN VS STATE ETC
+Case No: Crl. Appeal-Against Conviction-PPC 531-17
+Judge(s): Mr. Justice Tariq Saleem Sheikh 19-12-2019 2019 LHC 4456 PLJ 2020 Crc. Lah 587
+Citation: 2019 LHC 4456
+
+[PASSAGE]
+[CASE] MAZHAR HUSSAIN VS STATE ETC | Lahore High Court | 2019 | 2019 LHC 4456
+
+27. 
+In Muhammad Akhtar and 4 others v. The State and 
+2 others (2008 PCr.LJ 858), this Court ruled: 
+ 
+“…In the case in hand the Petitioners are alleged to have been 
+acquitted, admittedly as a result of withdrawal of the private 
+complaint wherein they were neither prosecuted not punished. 
+In this behalf reliance is also placed on the case-law reported 
+as Azmat Bibi and others v. Asfa Riaz and other (PLD 2002 
+SC 687), wherein, the apex Court despite dismissal of first 
+private complaint for non-prosecution, dismissal of second 
+complaint for some technical defect, even then permitted filing 
+of third private complaint.” 
+28.  
+For all the above reasons I hold that the bar contained 
+in Article 13 of the Constitution or Section 403 Cr.P.C. does not 
+apply to the facts and circumstances of the instant case. The 
+contention of the Appellant that his trial was bad in law is 
+repelled.  
+29. 
+Now I turn to the merits of the case. The unfortunate 
+incident in which Rasheed Ahmad was killed took place in Chak 
+No.45/WB within the remit of Police Station City Vehari during 
+the night between 15/16.5.2004 at 11:30 p.m. FIR No.108/2004 
+Exh.PM/1 was registered on the complaint Exh.PM of Ghulam 
+Haider (since dead) the same night at 1:10 a.m. Since the police 
+station was just two furlongs from the place of occurrence, it was 
+by no means prompt. The following excerpt from the cross-
+examination of Muhammad Zafar (PW-11) rather shows that it 
+was lodged after preliminary investigation and deliberation:  
+ 
+“Deceased Rasheed ASI came at the spot at about 11:00 p.m. 
+(night). The occurrence was completed maximum within a 
+minute. I took the injured into my lap and boarded him in his 
+own car and shifted him to DHQ, Hospital Vehari. In fact I 
+was not the person who took the injured and boarded him in 
+the car. I was sitting on driving seat. DHQ, Hospital is situated 
+about 1½/2 kms from the place of occurrence. At about 11:30 
+Crl. Appeal No. 531/2017 
+ 
+- 16 -
+we proceeded toward the hospital and reached there within ten 
+minutes. We all took the injured to Emergency Ward and 
+father of the deceased obtained outdoor ticket. It took 15 to 20 
+minutes when the doctor examined the deceased and informed 
+us about his death and the dead body was kept in custody for 
+the purpose of postmortem. In the meantime police officials 
+came in the hospital and I accompanied them to the place of 
+occurrence. The police officials came in the hospital at about 
+12:00/12:30 a.m. (night). One ASI and two constables came to 
+the hospital and all of them went with us to the place of 
+occurrence. We reached at the place of occurrence from 
+hospital at about 2:00 a.m. on 16.05.2004. For about 30 
+minutes police officials completed the proceedings from one 
+room to another room. We all left the hospital at about       
+1:30 a.m.” 
+30. 
+In Mst. Asia Bibi v. The State and others (PLD 2019 
+SC 64), while considering the effect of delay in registration of FIR 
+the Hon‟ble Supreme Court of Pakistan held:  
+ 
+“…If there is any delay in lodging of a FIR and 
+commencement of investigation, it gives rise to a doubt, 
+which, of course, cannot be extended to anyone else except to 
+the accused. Furthermore, FIR lodged after conducting an 
+inquiry loses its credibility.”
+[…]
+30. 
+In Mst. Asia Bibi v. The State and others (PLD 2019 
+SC 64), while considering the effect of delay in registration of FIR 
+the Hon‟ble Supreme Court of Pakistan held:  
+ 
+“…If there is any delay in lodging of a FIR and 
+commencement of investigation, it gives rise to a doubt, 
+which, of course, cannot be extended to anyone else except to 
+the accused. Furthermore, FIR lodged after conducting an 
+inquiry loses its credibility.” 
+31. 
+According to the prosecution, the motive behind the 
+occurrence was a property dispute. Shehnaz and Zumurd, the 
+daughters of Kanwar Mujeeb Ali, were married to Rasheed 
+Ahmad and Akhtar Hussain alias Zakir respectively. Their mother 
+Khursheed Bibi transferred her share in land which she had 
+inherited from Kanwar Mujeeb Ali to Shehnaz. Rashid Ahmad 
+being her husband took possession of that land. Kanwar‟s son 
+Khaliq-ur-Rehman and Zumurd‟s husband Akhtar Husain alias 
+Zakir felt deprived and claimed that they had a right in the 
+property in question and this became a bone of contention 
+between them and Rasheed Ahmad. About a month before the 
+incident they threatened that they would kill Rasheed Ahmad if he 
+did not give them their due. However, during trial the prosecution 
+did not produce any evidence to prove the alleged motive except a 
+bald statement of Muhammad Ashraf (PW-10). It could have 
+examined Khursheed Bibi and Shehnaz and adduced the relevant 
+sale deed/mutation if the transaction was documented but it did 
+Crl. Appeal No. 531/2017 
+ 
+- 17 -
+not do so. In the circumstances, while relying on the law laid 
+down in Lal Khan v. The State (2006 SCMR 1846), Riaz Ahmed 
+v. The State (2010 SCMR 846), Khalid @ Khalidi and 2 others v. 
+The State (2012 SCMR 327) and Pathan v. The State (2015 
+SCMR 315), I am constrained to draw an adverse presumption 
+against</pre></details>
+          <details class="passage"><summary>Agent steps</summary><pre>🧭 Understood: intent=case_law, follow-up=none, written in Urdu (Nastaliq script) → answer in Urdu (Nastaliq script)
+🌐 Translated for search → &#x27;effect of delay in registration of FIR on the accused in a murder case&#x27;
+⚡ Dispatch → search_case_law
+✅ Sufficient results (best_score=0.89)
+🧪 Grounding verification passed: evidence is sufficient for synthesis.
+🧪 Relevance gate skipped — strong match (top score 0.89 ≥ 0.75)
+✍️  Synthesizing final answer (1888 chars) from 1 tool result(s)</pre></details>
+        </section>
+</div>
+</body></html>

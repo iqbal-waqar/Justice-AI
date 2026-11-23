@@ -13,6 +13,13 @@ class UserResponse(BaseModel):
     notification_email: Optional[str]
     profile_picture: Optional[str]
     role: str
+    bio: Optional[str] = None
+    practice_areas: Optional[str] = None
+    experience_years: Optional[int] = None
+    courts: Optional[str] = None
+    languages: Optional[str] = None
+    directory_listed: bool = False
+    directory_complete: bool = False
     class Config:
         from_attributes = True
 
@@ -37,11 +44,32 @@ class ProfileUpdateRequest(BaseModel):
     specialization: Optional[str] = None
     city: Optional[str] = None
     notification_email: Optional[str] = None
+    bio: Optional[str] = None
+    practice_areas: Optional[str] = None
+    experience_years: Optional[int] = None
+    courts: Optional[str] = None
+    languages: Optional[str] = None
+    directory_listed: Optional[bool] = None
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+class SignupResponse(BaseModel):
+    verification_required: bool = True
+    email: str
+    message: str
+
+
+class EmailCodeRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+
+class EmailResendRequest(BaseModel):
+    email: EmailStr
 
 
 class SendCodeRequest(BaseModel):
@@ -51,10 +79,6 @@ class SendCodeRequest(BaseModel):
 class VerifyCodeRequest(BaseModel):
     phone: str
     code: str
-
-
-class FirebasePhoneVerify(BaseModel):
-    phone: str
 
 
 class GoogleAuthRequest(BaseModel):

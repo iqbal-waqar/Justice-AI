@@ -1,41 +1,54 @@
+# Justice AI backend — pinned to versions verified working together.
+# System packages also needed for scanned-PDF OCR: tesseract-ocr, poppler-utils.
+
+# ── Web framework ─────────────────────────────────────────────
 fastapi==0.111.0
 uvicorn==0.30.1
+python-multipart==0.0.22        # file uploads (documents, profile pictures)
 python-dotenv==1.0.1
 pydantic==2.7.4
+email-validator==2.3.0
 
-# LangChain + LangGraph
-langchain>=0.2.6
-langchain-community>=0.2.6
-langchain-groq>=0.1.6
-langchain-huggingface>=0.0.3
-langchain-core>=0.2.22
-langgraph>=0.1.19
+# ── Auth ──────────────────────────────────────────────────────
+python-jose[cryptography]==3.5.0   # JWT
+cryptography==46.0.5               # AES-256-GCM encryption of vault documents
+bcrypt==5.0.0                      # password hashing
+google-auth==2.49.2                # Google / Firebase sign-in token verification
 
-# Vector DB
-qdrant-client>=1.10.0
-fastembed>=0.3.0          # BM25 sparse vectors for native hybrid search
+# ── Database ──────────────────────────────────────────────────
+SQLAlchemy==2.0.48
+alembic==1.18.4
+psycopg2-binary==2.9.12
 
-# Embeddings & Reranking (CPU Optimized)
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.3.1+cpu
-sentence-transformers==3.0.1
+# ── Background jobs & cache ───────────────────────────────────
+APScheduler==3.11.2                # hearing reminders
+redis==5.3.1                       # answer cache (optional at runtime: falls back to in-memory)
 
-# Chunking
-tiktoken==0.7.0
+# ── LLM orchestration (OpenAI) ────────────────────────────────
+langchain==0.3.27
+langchain-core==0.3.86
+langchain-text-splitters==0.3.11
+langchain-openai==0.3.35
+openai==2.54.0
+langgraph==1.0.1
+langsmith==0.14.17                 # tracing (optional; off unless LANGSMITH_TRACING=true)
 
-# Data
+# ── Retrieval ─────────────────────────────────────────────────
+# Embeddings + reranking are Voyage AI's hosted API, called over HTTP with `requests`
+# (no voyageai SDK, no torch / local models).
+qdrant-client==1.17.1
+fastembed==0.9.0                   # BM25 sparse vectors for hybrid search
+tiktoken==0.7.0                    # token-aware chunking
+requests==2.32.3
+
+# ── Documents & data ──────────────────────────────────────────
 jsonlines==4.0.0
 numpy==1.26.4
-pdfplumber==0.11.4
+pdfplumber==0.11.9
 pdf2image==1.17.0
 pytesseract==0.3.13
 Pillow==10.4.0
-rapidocr-onnxruntime==1.4.4
-opencv-python==4.10.0.84
 
-# Frontend
-streamlit==1.36.0
-requests==2.32.3
-rank-bm25==0.2.2
-pdfplumber==0.11.4
-twilio>=9.2.0
+# ── Document vault & billing ──────────────────────────────────
+boto3==1.35.99                     # S3-compatible object storage (Cloudflare R2 / AWS S3 / B2)
+reportlab==4.2.5                   # client statement PDFs

@@ -179,20 +179,39 @@ class DocumentProcessorService:
             print(f"⚠️ Error deleting document chunks: {error}")
 
     def search_user_document(self, query: str, document_id: str, top_k: int = 8) -> List[Dict[str, Any]]:
-        """Search within a specific user-uploaded document using vector similarity."""
+        """Search within one uploaded document: hybrid (semantic + keyword) search,
+        the same way the legal collection is searched, so exact terms such as a
+        section number, a name or an amount are found as well as paraphrases."""
+        from qdrant_client.models import Prefetch, FusionQuery, Fusion
+
         client = qdrant_service.get_qdrant_client()
         query_vector = embeddings_service.embed_query(query)
+        doc_filter = self.build_document_filter(document_id)
 
         try:
-            response = client.query_points(
-                collection_name=COLLECTION_NAME,
-                query=query_vector,
-                using="dense",
-                query_filter=self.build_document_filter(document_id),
-                limit=top_k,
-                with_payload=True,
-                with_vectors=False,
-            )
+            try:
+                response = client.query_points(
+                    collection_name=COLLECTION_NAME,
+                    prefetch=[
+                        Prefetch(query=query_vector, using="dense", filter=doc_filter, limit=top_k * 3),
+                        Prefetch(query=sparse_service.embed_query(query), using="sparse", filter=doc_filter, limit=top_k * 3),
+                    ],
+                    query=FusionQuery(fusion=Fusion.RRF),
+                    limit=top_k,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+            except Exception as error:
+                print(f"⚠️ Document hybrid search failed ({error.__class__.__name__}) — using semantic search only")
+                response = client.query_points(
+                    collection_name=COLLECTION_NAME,
+                    query=query_vector,
+                    using="dense",
+                    query_filter=doc_filter,
+                    limit=top_k,
+                    with_payload=True,
+                    with_vectors=False,
+                )
             points = response.points if hasattr(response, "points") else response
         except Exception as error:
             print(f"⚠️ Document search error: {error}")

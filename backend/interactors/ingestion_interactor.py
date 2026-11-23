@@ -5,8 +5,6 @@ from backend.services.ingestion import ingestion_service
 
 
 class IngestionInteractor:
-    """Thin wrapper over the unified ingestion service (backend.services.ingestion)."""
-
     def ingest_jsonl_file(
         self,
         file_path: str,

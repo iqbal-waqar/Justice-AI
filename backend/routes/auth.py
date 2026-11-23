@@ -5,12 +5,14 @@ from backend.database.db import get_db
 from backend.database.migrations.user import User
 from backend.interactors.auth_interactor import auth_interactor
 from backend.schemas import (
-    FirebasePhoneVerify,
+    EmailCodeRequest,
+    EmailResendRequest,
     GoogleAuthRequest,
     LoginRequest,
     ProfileUpdateRequest,
     SendCodeRequest,
     SignupRequest,
+    SignupResponse,
     TokenResponse,
     UserResponse,
     VerifyCodeRequest,
@@ -19,9 +21,19 @@ from backend.schemas import (
 router = APIRouter()
 
 
-@router.post("/auth/signup", response_model=TokenResponse)
+@router.post("/auth/signup", response_model=SignupResponse)
 def signup(req: SignupRequest, db: Session = Depends(get_db)):
     return auth_interactor.signup(req, db)
+
+
+@router.post("/auth/email/verify", response_model=TokenResponse)
+def verify_email(req: EmailCodeRequest, db: Session = Depends(get_db)):
+    return auth_interactor.verify_email(req, db)
+
+
+@router.post("/auth/email/resend")
+def resend_email_code(req: EmailResendRequest, db: Session = Depends(get_db)):
+    return auth_interactor.resend_email_code(req, db)
 
 
 @router.post("/auth/login", response_model=TokenResponse)
@@ -67,15 +79,6 @@ def verify_phone_code(
     db: Session = Depends(get_db),
 ):
     return auth_interactor.verify_phone_code(req, current_user, db)
-
-
-@router.post("/auth/phone/verify-firebase", response_model=UserResponse)
-def verify_firebase_phone(
-    req: FirebasePhoneVerify,
-    current_user: User = Depends(auth_interactor.resolve_current_user),
-    db: Session = Depends(get_db),
-):
-    return auth_interactor.verify_firebase_phone(req, current_user, db)
 
 
 @router.post("/auth/google", response_model=TokenResponse)

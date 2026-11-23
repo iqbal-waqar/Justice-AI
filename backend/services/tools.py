@@ -1,63 +1,45 @@
 import os
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from difflib import SequenceMatcher
+
 import requests
-import numpy as np
 from typing import Optional, List, Dict, Any
 from langchain.tools import tool
-from sentence_transformers import CrossEncoder
-from rank_bm25 import BM25Okapi
 
 from backend.services.qdrant import qdrant_service, COLLECTION_NAME
 from backend.services.embeddings import embeddings_service
 from backend.services.sparse import sparse_service
-from backend.services.query_rewriter import query_rewriter_service
+from backend.services.tracing import (
+    traceable, summarize_docs, summarize_search_inputs, summarize_rerank_inputs,
+)
+from langsmith.run_helpers import get_current_run_tree, tracing_context
 
-# ─── Hybrid search weight configuration (tunable via .env) ────────────────────
-DENSE_WEIGHT = float(os.getenv("HYBRID_DENSE_WEIGHT", "0.6"))
-BM25_WEIGHT = float(os.getenv("HYBRID_BM25_WEIGHT", "0.4"))
-RRF_K = int(os.getenv("HYBRID_RRF_K", "60"))
-
-# ─── Singleton reranker ────────────────────────────────────────────────────────
-_reranker: Optional[CrossEncoder] = None
+# One keep-alive HTTPS session for Voyage rerank (a fresh requests.post per call
+# re-did the TLS handshake every query).
+_voyage_session = requests.Session()
 
 
-def _get_reranker() -> CrossEncoder:
-    global _reranker
-    if _reranker is None:
-        # L-6-v2: 6-layer model — 2× faster than L-12-v2 with minimal quality loss.
-        # Best tradeoff for production CPU inference.
-        _reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-12-v2", max_length=512, device="cpu")
-    return _reranker
+class SearchUnavailable(Exception):
+    """The embedding service or the vector database could not be reached."""
+
+
+# Prefix of the tool message the graph sees when a search tool fails. The agent
+# reports an outage for it instead of treating it as "nothing found".
+SEARCH_UNAVAILABLE = "SEARCH_UNAVAILABLE"
+
+
+def tool_error_message(e: Exception) -> str:
+    print(f"⚠️ Search tool failed ({e.__class__.__name__}): {str(e)[:200]}")
+    return f"{SEARCH_UNAVAILABLE}: {e.__class__.__name__}"
 
 
 # ─── Core retrieval helpers ────────────────────────────────────────────────────
 
-def _build_qdrant_filter(doc_type_filter: Optional[Any] = None, court_filter: Optional[str] = None, year_filter: Optional[str] = None) -> Optional[Any]:
-    """Build a Qdrant filter from provided criteria."""
-    from qdrant_client.models import Filter as QdrantFilter, FieldCondition, MatchValue, HasIdCondition, Range
-    
-    conditions = []
-    if doc_type_filter:
-        if isinstance(doc_type_filter, str):
-            conditions.append(FieldCondition(key="doc_type", match=MatchValue(value=doc_type_filter)))
-        elif isinstance(doc_type_filter, list):
-            # For multiple values, create OR-like condition using multiple FieldConditions
-            # Qdrant doesn't have direct OR for same field, so we return None and let caller handle
-            return None  # Caller will do separate searches
-    if court_filter:
-        conditions.append(FieldCondition(key="court", match=MatchValue(value=court_filter)))
-    if year_filter:
-        conditions.append(FieldCondition(key="year", match=MatchValue(value=str(year_filter))))
-    
-    if not conditions:
-        return None
-    if len(conditions) == 1:
-        return QdrantFilter(must=conditions)
-    return QdrantFilter(must=conditions)
-
-
-def _qfilter(doc_type_filter: Optional[Any] = None, court_filter: Optional[str] = None, year_filter: Optional[str] = None):
-    """Build a server-side Qdrant filter (handles str or list doc_type)."""
+def _qfilter(doc_type_filter: Optional[Any] = None, court_filter: Optional[str] = None, year_filter: Optional[Any] = None):
+    """Build a server-side Qdrant filter (doc_type and year accept a str or a list)."""
     from qdrant_client.models import Filter as QdrantFilter, FieldCondition, MatchValue, MatchAny
     must = []
     if doc_type_filter:
@@ -68,7 +50,12 @@ def _qfilter(doc_type_filter: Optional[Any] = None, court_filter: Optional[str] 
     if court_filter:
         must.append(FieldCondition(key="court", match=MatchValue(value=court_filter)))
     if year_filter:
-        must.append(FieldCondition(key="year", match=MatchValue(value=str(year_filter))))
+        # `year` is a keyword index (decision year as "2020"), so ranges are
+        # expressed as the explicit list of years.
+        if isinstance(year_filter, (list, tuple, set)):
+            must.append(FieldCondition(key="year", match=MatchAny(any=[str(y) for y in year_filter])))
+        else:
+            must.append(FieldCondition(key="year", match=MatchValue(value=str(year_filter))))
     return QdrantFilter(must=must) if must else None
 
 
@@ -105,8 +92,10 @@ def _map_point(scored_point) -> Dict[str, Any]:
             "is_chief_justice": payload.get("is_chief_justice", False),
             "judge_name": payload.get("judge_name", ""),
             "designation": payload.get("designation", ""),
+            "date_of_appointment": payload.get("date_of_appointment", ""),
+            "profile_url": payload.get("profile_url", ""),
         },
-        "score": getattr(scored_point, "score", 0.0),
+        "score": getattr(scored_point, "score", 0.0) or 0.0,
     }
 
 
@@ -116,6 +105,7 @@ def _qdrant_vector_search(
     doc_type_filter: Optional[Any] = None,
     court_filter: Optional[str] = None,
     year_filter: Optional[str] = None,
+    raise_on_error: bool = False,
 ) -> List[Dict[str, Any]]:
     """Dense (semantic) search against the named 'dense' vector, server-side filters."""
     client = qdrant_service.get_qdrant_client()
@@ -133,240 +123,14 @@ def _qdrant_vector_search(
         points = response.points if hasattr(response, "points") else response
     except Exception as e:
         print(f"Qdrant dense search error: {e}")
+        if raise_on_error:
+            raise SearchUnavailable(f"vector database: {e.__class__.__name__}") from e
         return []
     return [_map_point(p) for p in points][:top_k]
 
 
-def _bm25_search(
-    query: str,
-    top_k: int = 15,
-    doc_type_filter: Optional[Any] = None,
-    court_filter: Optional[str] = None,
-    year_filter: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    """Keyword search against Qdrant using SERVER-SIDE filters for speed.
-
-    Previously scrolled up to 5,000 unfiltered points then filtered client-side.
-    With 61k+ points in the collection, the relevant doc_type subset (e.g.
-    isb_judge) was often past the 5,000 cutoff and returned zero results.
-    Now we push doc_type/court/year filters into the Qdrant scroll call so
-    we only fetch and score the relevant subset.
-    """
-    from qdrant_client.models import Filter as QdrantFilter, FieldCondition, MatchValue
-    client = qdrant_service.get_qdrant_client()
-
-    # Handle list of doc_types — recurse once per type then merge
-    if isinstance(doc_type_filter, list):
-        all_results = []
-        for dt in doc_type_filter:
-            results = _bm25_search(
-                query, top_k=top_k,
-                doc_type_filter=dt,
-                court_filter=court_filter,
-                year_filter=year_filter,
-            )
-            all_results.extend(results)
-        seen: Dict[tuple, float] = {}
-        deduped: List[Dict] = []
-        for r in all_results:
-            key = (r["metadata"].get("source_id"), r["metadata"].get("chunk_index"))
-            score = r.get("score", 0.0)
-            if key not in seen:
-                seen[key] = score
-                deduped.append(r)
-            elif score > seen[key]:
-                seen[key] = score
-                for i, ex in enumerate(deduped):
-                    if (ex["metadata"].get("source_id"), ex["metadata"].get("chunk_index")) == key:
-                        deduped[i] = r
-                        break
-        deduped.sort(key=lambda x: x.get("score", 0.0), reverse=True)
-        return deduped[:top_k]
-
-    try:
-        query_lower = query.lower()
-        # Include 3-char terms (fir, 302, 561, ihc, lhc, etc.) — legal terms are short
-        keywords = [w for w in query_lower.split() if len(w) >= 3]
-        if not keywords:
-            return []
-
-        # ── Build SERVER-SIDE filter so Qdrant only returns the relevant subset ──
-        # This avoids scanning all 61k points and guarantees we reach the right
-        # doc_type regardless of its storage offset in the collection.
-        scroll_conditions = []
-        if doc_type_filter and isinstance(doc_type_filter, str):
-            scroll_conditions.append(
-                FieldCondition(key="doc_type", match=MatchValue(value=doc_type_filter))
-            )
-        if court_filter:
-            scroll_conditions.append(
-                FieldCondition(key="court", match=MatchValue(value=court_filter))
-            )
-        if year_filter:
-            scroll_conditions.append(
-                FieldCondition(key="year", match=MatchValue(value=str(year_filter)))
-            )
-        qdrant_filter = QdrantFilter(must=scroll_conditions) if scroll_conditions else None
-
-        # ── Dynamic BM25 cap based on doc type ──
-        # Judge types: 400-600 total chunks — 800 is more than enough.
-        # Case types: 10k-20k total chunks — cap at 1500 to keep batch calls low
-        # Vector search already gives us great semantic coverage.
-        _JUDGE_TYPES = {"isb_judge", "sc_judge", "lhc_judge", "lhc_judge_new"}
-        _is_judge_type = isinstance(doc_type_filter, str) and doc_type_filter in _JUDGE_TYPES
-        _MAX_BM25_DOCS = 600 if _is_judge_type else 500
-
-        all_points: list = []
-        _scroll_offset = None
-        while len(all_points) < _MAX_BM25_DOCS:
-            _batch, _scroll_offset = client.scroll(
-                collection_name=COLLECTION_NAME,
-                scroll_filter=qdrant_filter,
-                limit=500,
-                offset=_scroll_offset,
-                with_payload=True,
-                with_vectors=False,
-            )
-            all_points.extend(_batch)
-            if _scroll_offset is None:
-                break
-
-        # ── Build searchable text for BM25Okapi TF-IDF scoring ──
-        doc_contents = []
-        doc_points = []
-        for point in all_points:
-            payload = point.payload or {}
-            doc_type = payload.get("doc_type", "")
-            if doc_type in _JUDGE_TYPES:
-                text = (
-                    payload.get("judge_name", "") + " "
-                    + payload.get("designation", "") + " "
-                    + payload.get("content", "") + " "
-                    + payload.get("court", "")
-                ).lower()
-            else:
-                text = (
-                    payload.get("content", "") + " "
-                    + payload.get("case_title", "") + " "
-                    + payload.get("title", "") + " "
-                    + payload.get("case_number", "") + " "
-                    + payload.get("petitioner", "") + " "
-                    + payload.get("respondent", "")
-                ).lower()
-            doc_contents.append(text)
-            doc_points.append((point, payload))
-
-        if not doc_contents:
-            return []
-
-        # ── BM25Okapi TF-IDF scoring (proper term frequency / inverse doc freq) ──
-        tokenized_corpus = [text.split() for text in doc_contents]
-        bm25 = BM25Okapi(tokenized_corpus)
-        bm25_scores = bm25.get_scores(keywords)
-
-        # Normalize scores to [0, 1] for consistent downstream handling
-        max_score = float(max(bm25_scores)) if len(bm25_scores) > 0 and max(bm25_scores) > 0 else 1.0
-
-        # Pair scores with points, filter zero-score docs
-        scored = []
-        for idx, score in enumerate(bm25_scores):
-            if score > 0:
-                point, payload = doc_points[idx]
-                scored.append((point, float(score), payload))
-
-        scored.sort(key=lambda x: x[1], reverse=True)
-
-        results = []
-        for point, bm25_score, payload in scored[:top_k]:
-            doc_type = payload.get("doc_type", "")
-            case_title = payload.get("case_title", "") or payload.get("title", "")
-            case_number = payload.get("case_number", "")
-
-            judge_str = payload.get("judge", "")
-            judges_list = payload.get("judges_list", [])
-            if not judge_str and judges_list:
-                judge_str = ", ".join(judges_list[:3])
-
-            results.append({
-                "content": payload.get("content", ""),
-                "metadata": {
-                    "doc_type": doc_type,
-                    "title": case_title or case_number,
-                    "case_title": case_title,
-                    "case_number": case_number,
-                    "court": payload.get("court", ""),
-                    "year": payload.get("year", ""),
-                    "pdf_url": payload.get("pdf_url", ""),
-                    "image_url": payload.get("image_url", ""),
-                    "source_id": case_number,
-                    "chunk_index": payload.get("chunk_index", 0),
-                    "total_chunks": payload.get("total_chunks", 0),
-                    "judge": judge_str,
-                    "decision_date": payload.get("decision_date", ""),
-                    "citation": payload.get("citation", ""),
-                    "petitioner": payload.get("petitioner", "") or ", ".join(payload.get("petitioners", [])),
-                    "respondent": payload.get("respondent", "") or ", ".join(payload.get("respondents", [])),
-                    # Judge fields
-                    "status": payload.get("status", ""),
-                    "is_chief_justice": payload.get("is_chief_justice", False),
-                    "judge_name": payload.get("judge_name", ""),
-                    "designation": payload.get("designation", ""),
-                },
-                "score": bm25_score / max_score,  # Normalized BM25Okapi score
-            })
-        return results
-
-    except Exception as e:
-        print(f"Qdrant BM25 search error: {e}")
-        return []
-
-
-def _reciprocal_rank_fusion(
-    result_lists: List[List[Dict]],
-    weights: Optional[List[float]] = None,
-    k: int = None,
-) -> List[Dict]:
-    """Merge multiple ranked result lists using Weighted Reciprocal Rank Fusion.
-
-    Each list gets a weight (default: [DENSE_WEIGHT, BM25_WEIGHT] from .env).
-    Score per doc = sum of weight_i * 1/(k + rank_i) across all lists.
-    Documents found in BOTH lists naturally get boosted.
-
-    Args:
-        result_lists: ordered list of result sets (e.g. [vector_results, bm25_results])
-        weights: per-list weight (e.g. [0.6, 0.4]). Falls back to env config.
-        k: RRF constant. Higher = more equal weighting between ranks. Falls back to env.
-    """
-    if k is None:
-        k = RRF_K
-    if weights is None:
-        weights = [DENSE_WEIGHT, BM25_WEIGHT]
-    # Pad weights if more lists than weights provided
-    while len(weights) < len(result_lists):
-        weights.append(1.0)
-
-    fused: Dict[str, Dict] = {}
-    for list_idx, result_list in enumerate(result_lists):
-        w = weights[list_idx]
-        for rank, doc in enumerate(result_list):
-            m = doc.get("metadata", {})
-            key = f"{m.get('source_id', '')}|{m.get('chunk_index', 0)}"
-            if key not in fused:
-                fused[key] = {"doc": doc, "rrf_score": 0.0}
-            elif doc.get("score", 0) > fused[key]["doc"].get("score", 0):
-                fused[key]["doc"] = doc  # keep doc with better original score
-            fused[key]["rrf_score"] += w * (1.0 / (k + rank + 1))
-
-    sorted_results = sorted(fused.values(), key=lambda x: x["rrf_score"], reverse=True)
-    # Set score to RRF score for downstream (MMR, reranker input ordering)
-    results = []
-    for item in sorted_results:
-        doc = item["doc"]
-        doc["score"] = item["rrf_score"]
-        results.append(doc)
-    return results
-
-
+@traceable(name="Qdrant hybrid search", run_type="retriever",
+           process_inputs=summarize_search_inputs, process_outputs=summarize_docs)
 def _hybrid_search(
     query: str,
     top_k: int = 25,
@@ -378,7 +142,7 @@ def _hybrid_search(
 
     Runs dense (Voyage) + sparse (BM25) search over the FULL corpus server-side
     and fuses them with Reciprocal Rank Fusion in a single request — no per-query
-    scroll or in-Python BM25 rebuild. Returns top-K for downstream MMR + rerank.
+    scroll or in-Python BM25 rebuild. Returns top-K for the reranker.
     """
     from qdrant_client.models import Prefetch, FusionQuery, Fusion
 
@@ -390,10 +154,10 @@ def _hybrid_search(
         sparse_vec = sparse_service.embed_query(query)
     except Exception as e:
         print(f"Hybrid embed error: {e}")
-        return []
+        raise SearchUnavailable(f"embedding service: {e.__class__.__name__}") from e
 
-    try:
-        response = client.query_points(
+    def _run(c):
+        return c.query_points(
             collection_name=COLLECTION_NAME,
             prefetch=[
                 Prefetch(query=dense_vec, using="dense", filter=qfilter, limit=top_k * 2),
@@ -404,61 +168,29 @@ def _hybrid_search(
             with_payload=True,
             with_vectors=False,
         )
+
+    try:
+        try:
+            response = _run(client)
+        except Exception as first_err:
+            # The client is cached without per-call health pings, so a dropped
+            # connection surfaces here: reconnect once and retry.
+            print(f"Hybrid query error ({first_err.__class__.__name__}) — reconnecting to Qdrant and retrying")
+            response = _run(qdrant_service.reset_qdrant_client())
         points = response.points if hasattr(response, "points") else response
     except Exception as e:
         print(f"Hybrid query error: {e} — falling back to dense-only")
-        return _qdrant_vector_search(dense_vec, top_k, doc_type_filter, court_filter, year_filter)
+        return _qdrant_vector_search(dense_vec, top_k, doc_type_filter, court_filter, year_filter,
+                                     raise_on_error=True)
 
     return [_map_point(p) for p in points][:top_k]
-
-
-def _is_complex_query_text(query: str) -> bool:
-    q = (query or "").strip().lower()
-    if not q:
-        return False
-    if len(q.split()) >= 45:
-        return True
-    markers = [" and ", " also ", " additionally ", ";", ":", "?", "explain", "include", "roadmap", "strategy"]
-    marker_hits = sum(1 for m in markers if m in q)
-    return marker_hits >= 3
-
-
-def _mmr(candidates: List[Dict], top_k: int = 10, lambda_mult: float = 0.5) -> List[Dict]:
-    """MMR diversity filter."""
-    if len(candidates) <= top_k:
-        return candidates
-
-    scores = [c.get("score", 0.0) for c in candidates]
-
-    def word_set(t: str):
-        return set(t.lower().split())
-
-    selected, remaining = [], list(range(len(candidates)))
-    best = int(np.argmax(scores))
-    selected.append(best)
-    remaining.remove(best)
-
-    while len(selected) < top_k and remaining:
-        sel_words = [word_set(candidates[i]["content"]) for i in selected]
-        mmr_scores = []
-        for idx in remaining:
-            rel = scores[idx]
-            cw = word_set(candidates[idx]["content"])
-            max_red = max(
-                len(cw & sw) / len(cw | sw) if (cw | sw) else 0
-                for sw in sel_words
-            )
-            mmr_scores.append((idx, lambda_mult * rel - (1 - lambda_mult) * max_red))
-        best = max(mmr_scores, key=lambda x: x[1])[0]
-        selected.append(best)
-        remaining.remove(best)
-
-    return [candidates[i] for i in selected]
 
 
 # Minimum rerank score — stricter floor to reduce weak matches.
 RERANK_FLOOR = 0.0
 
+@traceable(name="Voyage rerank", run_type="chain",
+           process_inputs=summarize_rerank_inputs, process_outputs=summarize_docs)
 def _voyage_rerank(query: str, candidates: List[Dict]) -> Optional[List[Dict]]:
     """Rerank via Voyage's hosted rerank API (fast, no CPU). Returns None on failure."""
     key = os.getenv("VOYAGE_API_KEY", "").strip()
@@ -466,7 +198,7 @@ def _voyage_rerank(query: str, candidates: List[Dict]) -> Optional[List[Dict]]:
         return None
     docs = [d.get("content", "") or " " for d in candidates]
     try:
-        resp = requests.post(
+        resp = _voyage_session.post(
             "https://api.voyageai.com/v1/rerank",
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             json={
@@ -493,35 +225,65 @@ def _voyage_rerank(query: str, candidates: List[Dict]) -> Optional[List[Dict]]:
         return None
 
 
-def _cross_encoder_rerank(query: str, candidates: List[Dict]) -> List[Dict]:
-    """Local CPU cross-encoder reranking (fallback)."""
-    reranker = _get_reranker()
-    scores = reranker.predict([(query, d["content"]) for d in candidates])
-    for d, s in zip(candidates, scores):
-        d["rerank_score"] = float(s)
-        d["metadata"]["rerank_score"] = float(s)
-    return sorted(candidates, key=lambda x: x["rerank_score"], reverse=True)
+def _keep_fused_order(candidates: List[Dict]) -> List[Dict]:
+    """Fallback when Voyage rerank is unavailable: keep the hybrid (RRF) order.
+
+    A local cross-encoder fallback used to live here, but it pulled in torch +
+    transformers (~7s import, ~1GB) and could never run in practice — rerank only
+    happens after a successful Voyage query embedding, so a Voyage outage fails
+    earlier. RRF order is a sound ranking on its own.
+    """
+    for d in candidates:
+        s = float(d.get("score", 0.0))
+        d["rerank_score"] = s
+        d["metadata"]["rerank_score"] = s
+    return candidates
 
 
-def _rerank(query: str, candidates: List[Dict], top_k: int = 5) -> List[Dict]:
-    """Rerank (Voyage hosted → cross-encoder fallback) with dedup + floor filtering."""
+_CHUNK_HEADER_RE = re.compile(r"^\s*\[(?:CASE|LAW|JUDGE)\][^\n]*\n+")
+
+
+def _strip_chunk_header(content: str, position: int) -> str:
+    """Every ingested chunk starts with the same '[CASE] title | court | year'
+    line; when merging several chunks of one case keep it only once."""
+    return content if position == 0 else _CHUNK_HEADER_RE.sub("", content, count=1)
+
+
+def _rerank(query: str, candidates: List[Dict], top_k: int = 5, max_chunks_per_case: int = 1) -> List[Dict]:
+    """Rerank (Voyage hosted → fused-order fallback), group by case, floor-filter.
+
+    top_k counts distinct cases. With max_chunks_per_case > 1, a case's
+    next-best relevant passages are appended to its first one (in judgment
+    order) instead of being dropped — one case = one document block, so the
+    model never writes duplicate case cards.
+    """
     if not candidates:
         return []
     ranked = _voyage_rerank(query, candidates)
     if ranked is None:
-        ranked = _cross_encoder_rerank(query, candidates)
+        ranked = _keep_fused_order(candidates)
 
-    # Deduplicate: keep only the highest-scoring chunk per case title
-    seen_titles: set = set()
-    deduped: List[Dict] = []
+    groups: Dict[str, List[Dict]] = {}
+    order: List[str] = []
     for d in ranked:
-        title = d.get("metadata", {}).get("title", "").strip().lower()
-        if title and title in seen_titles:
-            continue
-        seen_titles.add(title)
-        deduped.append(d)
+        title = d.get("metadata", {}).get("title", "").strip().lower() or f"__untitled_{id(d)}"
+        if title not in groups:
+            groups[title] = []
+            order.append(title)
+        if len(groups[title]) < max_chunks_per_case:
+            groups[title].append(d)
 
-    deduped = deduped[:top_k]
+    deduped: List[Dict] = []
+    for title in order[:top_k]:
+        chunks = groups[title]
+        head = chunks[0]
+        if len(chunks) > 1:
+            parts = sorted(chunks, key=lambda c: c.get("metadata", {}).get("chunk_index", 0))
+            merged = dict(head)
+            merged["content"] = "\n[…]\n".join(_strip_chunk_header(c.get("content", ""), i) for i, c in enumerate(parts))
+            deduped.append(merged)
+        else:
+            deduped.append(head)
     # Filter out results below the relevance floor
     filtered = [d for d in deduped if d["rerank_score"] >= RERANK_FLOOR]
     return filtered if filtered else deduped[:1]  # always return at least 1
@@ -529,114 +291,116 @@ def _rerank(query: str, candidates: List[Dict], top_k: int = 5) -> List[Dict]:
 RERANK_WARN = 0.3
 
 
-def _expand_chunk_context(docs: List[Dict], max_docs: int = 2) -> Dict[str, Dict[str, str]]:
-    """Fetch header chunks (0-1) AND surrounding chunks for each matched case.
+_JUDGE_DOC_TYPES = ("isb_judge", "lhc_judge", "sc_judge")
 
-    For each case judgment:
-      - Chunks 0-1: title, citation, judge names, parties, advocates, date
-      - Chunks N-1 through N+2: extended context around the matched passage
 
-    max_docs: only expand the top-N docs to keep Qdrant round-trips low (2 docs × 2 calls = 4 Qdrant calls).
-    Returns: {source_id: {"header": header_text, "surrounding": surrounding_text}}
-    """
-    docs = docs[:max_docs]  # Limit to top-N to cut extra Qdrant calls
-    from qdrant_client.models import Filter as QdrantFilter, FieldCondition, MatchValue, Range
-    
-    # Collect source_ids and their matched chunk indices
-    source_info: Dict[str, List[int]] = {}
+def _merge_judge_docs(docs: List[Dict]) -> List[Dict]:
+    """One profile per judge. A judge is stored as several chunks (profile header
+    + biography pieces); returning each as its own 'document' showed one judge as
+    'Found 6 profiles' and repeated the same person 6 times in the prompt."""
+    merged: Dict[str, Dict] = {}
+    order: List[str] = []
     for d in docs:
         m = d.get("metadata", {})
-        sid = m.get("source_id", "")
-        ci = m.get("chunk_index", 0)
-        dt = m.get("doc_type", "")
-        if sid and "judge" not in dt:
-            if sid not in source_info:
-                source_info[sid] = []
-            source_info[sid].append(ci)
-
-    if not source_info:
-        return {}
-
-    result: Dict[str, Dict[str, str]] = {}
-    try:
-        client = qdrant_service.get_qdrant_client()
-
-        for sid, matched_indices in source_info.items():
-            try:
-                # --- Query 1: Fetch header chunks (0-1) ---
-                header_filter = QdrantFilter(must=[
-                    FieldCondition(key="source_id", match=MatchValue(value=sid)),
-                    FieldCondition(key="chunk_index", range=Range(gte=0, lte=1))
-                ])
-                
-                header_points, _ = client.scroll(
-                    collection_name=COLLECTION_NAME,
-                    scroll_filter=header_filter,
-                    limit=2,
-                    with_payload=True,
-                    with_vectors=False,
-                )
-                
-                header_parts = []
-                for point in sorted(header_points, key=lambda p: p.payload.get("chunk_index", 0) if p.payload else 0):
-                    if point.payload:
-                        header_parts.append(point.payload.get("content", ""))
-
-                # --- Query 2: Fetch surrounding chunks for matched passages ---
-                surround_indices = set()
-                for ci in matched_indices:
-                    for offset in range(-1, 3):  # N-1, N, N+1, N+2
-                        idx = max(0, ci + offset)
-                        if idx > 1:  # skip header chunks, already fetched
-                            surround_indices.add(idx)
-
-                surrounding_parts = []
-                if surround_indices:
-                    min_ci = min(surround_indices)
-                    max_ci = max(surround_indices)
-                    
-                    surround_filter = QdrantFilter(must=[
-                        FieldCondition(key="source_id", match=MatchValue(value=sid)),
-                        FieldCondition(key="chunk_index", range=Range(gte=min_ci, lte=max_ci))
-                    ])
-                    
-                    surround_points, _ = client.scroll(
-                        collection_name=COLLECTION_NAME,
-                        scroll_filter=surround_filter,
-                        limit=max_ci - min_ci + 5,
-                        with_payload=True,
-                        with_vectors=False,
-                    )
-                    
-                    for point in sorted(surround_points, key=lambda p: p.payload.get("chunk_index", 0) if p.payload else 0):
-                        if point.payload:
-                            ci_fetched = point.payload.get("chunk_index", 0)
-                            if ci_fetched in surround_indices:
-                                surrounding_parts.append(point.payload.get("content", ""))
-
-                result[sid] = {
-                    "header": "\n".join(header_parts),
-                    "surrounding": "\n".join(surrounding_parts),
-                }
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-    return result
+        if m.get("doc_type") not in _JUDGE_DOC_TYPES:
+            key = f"__doc_{id(d)}"
+            merged[key] = d
+            order.append(key)
+            continue
+        # Two courts can each have a judge of the same name — keep them apart.
+        name = (m.get("judge_name") or m.get("title") or "").strip().lower()
+        key = f"{m.get('doc_type')}|{name}" if name else f"__judge_{id(d)}"
+        if key not in merged:
+            merged[key] = {**d, "_parts": [d]}
+            order.append(key)
+        else:
+            merged[key]["_parts"].append(d)
+            if d.get("score", 0) > merged[key].get("score", 0):
+                merged[key]["score"] = d["score"]
+    out = []
+    for key in order:
+        d = merged[key]
+        parts = d.pop("_parts", None)
+        if parts and len(parts) > 1:
+            parts = sorted(parts, key=lambda p: p.get("metadata", {}).get("chunk_index", 0))
+            seen, texts = set(), []
+            for p in parts:
+                t = (p.get("content") or "").strip()
+                if t and t not in seen:
+                    seen.add(t)
+                    texts.append(t)
+            d = {**d, "content": "\n\n".join(texts)}
+        out.append(d)
+    return out
 
 
-def _format_results(docs: List[Dict]) -> str:
+_EXCERPT_STOPWORDS = {
+    "what", "does", "about", "under", "with", "from", "that", "this", "there", "their",
+    "which", "when", "where", "have", "been", "will", "would", "could", "should", "into",
+    "case", "cases", "court", "judgment", "judgments", "pakistan", "say", "says", "the",
+    "and", "for", "law", "laws", "legal", "section", "article", "act", "can", "file",
+}
+
+# A provision the question names ("Section 17", "s. 489-F", "Article 199", "Order XXXVII").
+_ASKED_PROVISION_RE = re.compile(
+    r"\b(?:sections?|s\.|u/s|articles?|art\.|order|rule)\s*(\d{1,4}(?:\s*-?\s*[A-Za-z])?|[IVXL]{1,7})\b", re.I)
+
+
+def _provision_heading(passage: str, query: str) -> Optional[int]:
+    """Position where a provision named in the question starts in the passage
+    ("17. Matters to be considered…"), so a cut keeps that provision's text."""
+    for num in _ASKED_PROVISION_RE.findall(query or ""):
+        num = re.sub(r"\s+", "", num)
+        variant = re.escape(num).replace("\\-", "\\s*-?\\s*") if "-" in num else re.escape(num)
+        m = re.search(rf"(?:^|[\s\]\(])({variant})\s*\.\s*[\[\(\"“A-Z]", passage)
+        if m:
+            return m.start(1)
+    return None
+
+
+def focused_excerpt(passage: str, query: str, width: int = 900) -> str:
+    """Return the `width`-char window of `passage` that matters for the question.
+
+    A long statute or judgment is cut to fit the model's context; keeping only its
+    beginning dropped the part that answers the question (e.g. a subsection near
+    the end of a section). The window starts at a provision the question names,
+    if the passage contains it; otherwise it is the stretch densest in the
+    question's terms.
+    """
+    if len(passage) <= width:
+        return passage
+    start = None
+    heading = _provision_heading(passage, query)
+    if heading is not None:
+        start = max(0, heading - 80)
+    else:
+        terms = {t for t in re.findall(r"[a-z0-9\-]+", (query or "").lower())
+                 if (len(t) > 3 or t.isdigit()) and t not in _EXCERPT_STOPWORDS}
+        low = passage.lower()
+        hits = sorted(m.start() for t in terms for m in re.finditer(re.escape(t), low))
+        if not hits:
+            return passage[:width]
+        best_count = -1
+        for h in hits:
+            s = max(0, h - 150)
+            count = sum(1 for x in hits if s <= x < s + width)
+            if count > best_count:
+                start, best_count = s, count
+    start = min(start, len(passage) - width)
+    snippet = passage[start:start + width]
+    return ("…" if start > 0 else "") + snippet + ("…" if start + width < len(passage) else "")
+
+
+def _format_results(docs: List[Dict], query: str = "") -> str:
     """Format retrieved docs for the agent."""
     if not docs:
         return "NO MATCHING DATA — no relevant documents found for this query."
 
+    docs = _merge_judge_docs(docs)
     lines = []
     n = len(docs)
     best_score = max(d.get("rerank_score", d.get("score", 0)) for d in docs)
 
-    # NO more _expand_chunk_context — it added 4+ Qdrant network calls (8-16s).
-    # The matched chunk content (3000+ chars) is sufficient for synthesis.
 
     for i, d in enumerate(docs, 1):
         m = d.get("metadata", {})
@@ -644,7 +408,7 @@ def _format_results(docs: List[Dict]) -> str:
         doc_type = m.get("doc_type", "")
 
         # ── Special formatting for JUDGE PROFILES ──
-        if doc_type in ("isb_judge", "lhc_judge_new", "lhc_judge", "sc_judge"):
+        if doc_type in _JUDGE_DOC_TYPES:
             judge_name = m.get("judge_name") or m.get("title", "Unknown Judge")
             designation = m.get("designation", "").strip()
             court = m.get("court", "").strip()
@@ -679,14 +443,16 @@ def _format_results(docs: List[Dict]) -> str:
                 judge_content += f"Status: {status}\n"
             judge_content += f"Chief Justice: {'Yes' if is_cj else 'No'}\n"
             if doa:
-                judge_content += f"Appointed: {doa}\n"
+                judge_content += f"Appointed to the bench (date of elevation as a judge, not as Chief Justice): {doa}\n"
             if image_url:
-                judge_content += f'\n<img src="{image_url}" width="200" height="250" />\n'
+                # Markdown image: the chat renders Markdown, never raw HTML.
+                judge_content += f"\n![{judge_name}]({image_url})\n"
             if bio:
                 judge_content += f"\n[BIOGRAPHY]\n{bio}\n"
 
             lines.append(
-                f"[Doc {i} of {n}] {judge_name} | judge_name={judge_name} | {doc_type} | {court} | score={score:.3f}\n"
+                f"[Doc {i} of {n}] {judge_name} | judge_name={judge_name} | {doc_type} | {court} | score={score:.3f}"
+                f" | pdf_url={m.get('profile_url', '')}\n"
                 f"{judge_content}"
             )
         else:
@@ -703,7 +469,9 @@ def _format_results(docs: List[Dict]) -> str:
             pdf_url = m.get("pdf_url", "")
             decision_date = m.get("decision_date", "")
 
-            matched_chunk = d["content"][:2500]
+            # Room for up to two merged passages per case; the synthesis context
+            # budget (CONTEXT_MAX_TOTAL_CHARS) is what bounds the total.
+            matched_chunk = focused_excerpt(d["content"], query, 5200) if query else d["content"][:5200]
 
             # Build a rich header from actual case metadata
             header_parts = []
@@ -736,11 +504,10 @@ def _format_results(docs: List[Dict]) -> str:
             )
     
     header = f"=== {n} RETRIEVED DOCUMENTS ===\n"
-    # LOW RELEVANCE WARNING only applies to case-law (rerank scores go 0-10+).
-    # Judge profile queries use BM25 scores (max ~1.0) so the threshold is
-    # irrelevant — skip the warning if all docs are judge profiles.
+    # LOW RELEVANCE WARNING applies to case-law rerank scores only; judge profiles
+    # are matched on name / court / status, so the threshold says nothing about them.
     all_judge_docs = all(
-        d.get("metadata", {}).get("doc_type", "") in ("isb_judge", "lhc_judge", "lhc_judge_new", "sc_judge")
+        d.get("metadata", {}).get("doc_type", "") in _JUDGE_DOC_TYPES
         for d in docs
     )
     if not all_judge_docs and best_score < RERANK_WARN:
@@ -756,58 +523,9 @@ def _format_results(docs: List[Dict]) -> str:
 #  TOOL DEFINITIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
-_CASE_DOC_TYPES_ALL = ["sc_case", "isb_case", "lhc_case", "federal_law", "punjab_law"]
-
-
-def _infer_case_doc_types(query: str) -> List[str]:
-    q = (query or "").lower()
-    asks_sc = any(k in q for k in ["supreme court", "sc ", " sc", "supreme"])
-    asks_ihc = any(k in q for k in ["islamabad high court", "ihc", "isb court", "islamabad court"])
-    asks_lhc = any(k in q for k in ["lahore high court", "lhc", "lahore court"])
-
-    # Detect constitutional/statutory provision references.
-    # When a query mentions Article/Section numbers, SC cases are almost always
-    # relevant because the Supreme Court is the primary authority for
-    # constitutional and statutory interpretation — include them even if the
-    # user only named a High Court.
-    import re as _infer_re
-    has_provision = bool(_infer_re.search(r'\b(?:article|section|s\.)\s*\d', q, _infer_re.IGNORECASE))
-
-    # Detect statute/act queries — these should always include federal_law
-    _STATUTE_KEYWORDS = [
-        "act ", " act", "ordinance", "statute", "federal law",
-        "punjab law", "penal code", "evidence act", "contract act",
-        "limitation act", "family courts act", "muslim family",
-        "specific relief", "companies act",
-    ]
-    asks_statutes = any(k in q for k in _STATUTE_KEYWORDS)
-    asks_punjab = "punjab" in q
-
-    selected: List[str] = []
-    if asks_sc:
-        selected.append("sc_case")
-    if asks_ihc:
-        selected.append("isb_case")
-    if asks_lhc:
-        selected.append("lhc_case")
-
-    # When a constitutional/statutory provision is mentioned, always include
-    # SC cases as they are the authoritative source for interpretation.
-    if has_provision and "sc_case" not in selected:
-        selected.append("sc_case")
-
-    # When statutes/acts are mentioned, include the statute corpora.
-    if asks_statutes or has_provision:
-        if "federal_law" not in selected:
-            selected.append("federal_law")
-        if asks_punjab and "punjab_law" not in selected:
-            selected.append("punjab_law")
-
-    if not selected:
-        return _CASE_DOC_TYPES_ALL
-
-    # preserve order while deduplicating
-    return list(dict.fromkeys(selected))
+# court_rules: the Lahore High Court Rules and Orders (ingest_court_rules.py).
+# district_case: Punjab district-court judgments, OCR'd from scans (ingest_district_courts.py).
+_CASE_DOC_TYPES_ALL = ["sc_case", "isb_case", "lhc_case", "district_case", "federal_law", "punjab_law", "court_rules"]
 
 
 def _map_court_to_case_doc_types(court: str) -> Optional[List[str]]:
@@ -816,744 +534,354 @@ def _map_court_to_case_doc_types(court: str) -> Optional[List[str]]:
         return ["sc_case"]
     if "islamabad" in c or "ihc" in c:
         return ["isb_case"]
+    if "district" in c:
+        return ["district_case"]
     if "lahore" in c or "lhc" in c:
         return ["lhc_case"]
     return None
 
-@tool
-def search_case_law(query: str) -> str:
+# Retrieval funnel: wide hybrid recall → Voyage rerank of every candidate → distinct cases.
+# (Was 16 → 6 → 4, which capped every answer at 4 cases from a 16-chunk pool.)
+HYBRID_K = int(os.getenv("RETRIEVAL_HYBRID_K", "48"))
+FINAL_CASES = int(os.getenv("RETRIEVAL_FINAL_CASES", "6"))
+FINAL_CASES_COMPLEX = int(os.getenv("RETRIEVAL_FINAL_CASES_COMPLEX", "8"))
+CHUNKS_PER_CASE = int(os.getenv("RETRIEVAL_CHUNKS_PER_CASE", "2"))
+
+
+def _run_case_search_impl(query: str, years: Optional[List[str]] = None,
+                          doc_types: Optional[List[str]] = None, broad: bool = False) -> str:
+    """Shared hybrid → rerank pipeline for the case-law/statute tools.
+
+    The query-understanding step decides the arguments: an English search query
+    (statutes named, Urdu translated), decision `years`, `doc_types` when the
+    user limited the courts, and `broad` for multi-part / statute questions
+    (more cases in the answer).
+
+    `years` is applied as a server-side Qdrant filter. If the filter leaves
+    nothing, the search is re-run without it and the output says so explicitly,
+    so the answer can't pretend the cases are from those years.
     """
-    Search Pakistani case law across Supreme Court and Islamabad High Court.
-    Use this when the user mentions a legal dispute, criminal offence,
+    doc_types = list(doc_types) if doc_types else _CASE_DOC_TYPES_ALL
+    final_k = FINAL_CASES_COMPLEX if broad else FINAL_CASES
+
+    year_list = [str(y) for y in years] if years else None
+    results = _hybrid_search(query, top_k=HYBRID_K, doc_type_filter=doc_types, year_filter=year_list)
+
+    note = ""
+    if year_list and not results:
+        results = _hybrid_search(query, top_k=HYBRID_K, doc_type_filter=doc_types)
+        span = year_list[0] if len(year_list) == 1 else f"{year_list[0]}–{year_list[-1]}"
+        note = (f"⚠️ YEAR FILTER: no documents decided in {span} matched this query. The documents "
+                f"below are from OTHER years — say so explicitly and do not present them as {span} judgments.\n")
+    elif year_list:
+        span = year_list[0] if len(year_list) == 1 else f"{year_list[0]}–{year_list[-1]}"
+        note = f"ℹ️ YEAR FILTER applied: only documents decided in {span}.\n"
+
+    # Every candidate goes to the reranker. A diversity (MMR) cut to 14 used to sit
+    # here; measured on 8 legal queries it dropped better-scoring cases in 6 of them
+    # and saved no time — grouping by case in _rerank already prevents duplicates.
+    final = _rerank(query, results, top_k=final_k, max_chunks_per_case=CHUNKS_PER_CASE)
+    out = _format_results(final, query)
+    if note and out.startswith("==="):
+        head, _, rest = out.partition("\n")
+        out = f"{head}\n{note}{rest}"
+    return out
+
+
+
+# ─── Speculative prefetch ─────────────────────────────────────────────────────
+# understand_query starts the case search in the background the moment the
+# query is known, while the LLM intent classifier runs. When the tool is then
+# dispatched with the same (query, years) it reuses the in-flight result instead
+# of searching again — hiding the classifier's ~1.3s entirely.
+_prefetch_lock = threading.Lock()
+_prefetch: Dict[tuple, tuple] = {}          # key → (Future, started_at)
+_prefetch_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="prefetch")
+_PREFETCH_TTL = 60.0
+
+
+def _search_key(query: str, years: Optional[List[str]], doc_types: Optional[List[str]] = None,
+                broad: bool = False) -> tuple:
+    return (" ".join((query or "").split()), tuple(str(y) for y in years) if years else (),
+            tuple(sorted(doc_types)) if doc_types else (), bool(broad))
+
+
+def prefetch_case_search(query: str, years: Optional[List[str]] = None,
+                         doc_types: Optional[List[str]] = None, broad: bool = False) -> None:
+    """Begin the case search now; a later _run_case_search with the same args reuses it."""
+    key = _search_key(query, years, doc_types, broad)
+    parent = get_current_run_tree()  # keep the background search inside the LangSmith trace
+
+    def job():
+        with tracing_context(parent=parent):
+            return _run_case_search_impl(query, years, doc_types, broad)
+
+    now = time.time()
+    with _prefetch_lock:
+        for k in [k for k, (_, t0) in _prefetch.items() if now - t0 > _PREFETCH_TTL]:
+            _prefetch.pop(k, None)  # abandoned (intent turned out to be a judge/out-of-scope query)
+        if key not in _prefetch:
+            _prefetch[key] = (_prefetch_pool.submit(job), now)
+
+
+def _run_case_search(query: str, years: Optional[List[str]] = None,
+                     doc_types: Optional[List[str]] = None, broad: bool = False) -> str:
+    with _prefetch_lock:
+        entry = _prefetch.pop(_search_key(query, years, doc_types, broad), None)
+    if entry is not None:
+        return entry[0].result()
+    return _run_case_search_impl(query, years, doc_types, broad)
+
+
+@tool
+def search_case_law(query: str, years: Optional[List[str]] = None,
+                    doc_types: Optional[List[str]] = None, broad: bool = False) -> str:
+    """
+    Search Pakistani case law (Supreme Court, Islamabad High Court, Lahore High Court, Punjab district courts)
+    and statutes. Use this when the user mentions a legal dispute, criminal offence,
     civil matter, or asks about judicial precedents and judgments.
 
-    Input: natural language legal query
+    query: natural language legal query
+    years: optional list of decision years to restrict to, e.g. ["2020"]
+    doc_types: optional collections to restrict to (sc_case, lhc_case, isb_case, district_case, federal_law, punjab_law, court_rules)
+    broad: return more cases (multi-part questions)
     Returns: top relevant case excerpts with court, year, and title
     """
-    doc_types = _infer_case_doc_types(query)
-    complex_query = _is_complex_query_text(query)
-
-    # HYBRID SEARCH (Enriched Vector + Optimized BM25)
-    hybrid_k = 24 if complex_query else 16
-    mmr_k =  8 if complex_query else  6
-    rerank_k = 5 if complex_query else  4
-
-    enriched = query_rewriter_service.enrich_query(query)
-    results = _hybrid_search(enriched, top_k=hybrid_k, doc_type_filter=doc_types)
-
-    # MMR diversity filter → cross-encoder reranking
-    diverse = _mmr(results, top_k=mmr_k)
-    final = _rerank(query, diverse, top_k=rerank_k)
-    return _format_results(final)
+    return _run_case_search(query, years, doc_types, broad)
 
 
-# ── COMMENTED OUT: Not yet ingested (LHC-only scope for now) ──────────────
-# @tool
-# def search_federal_laws(query: str) -> str:
-#     """Search Federal Laws of Pakistan."""
-#     q_vec = embed_query(query)
-#     hits = _weaviate_search(q_vec, top_k=20, doc_type_filter="federal_law")
-#     diverse = _mmr(hits, top_k=10)
-#     final = _rerank(query, diverse, top_k=5)
-#     return _format_results(final)
-#
-# @tool
-# def search_punjab_laws(query: str) -> str:
-#     """Search Punjab Provincial Laws."""
-#     q_vec = embed_query(query)
-#     hits = _weaviate_search(q_vec, top_k=20, doc_type_filter="punjab_law")
-#     diverse = _mmr(hits, top_k=10)
-#     final = _rerank(query, diverse, top_k=5)
-#     return _format_results(final)
-# ── END COMMENTED OUT ─────────────────────────────────────────────────────
 
 
-def _parse_qdrant_points(points) -> List[Dict[str, Any]]:
-    """Convert Qdrant ScoredPoint objects into our standard dict format."""
-    results = []
-    for point in points:
-        payload = point.payload or {}
-        results.append({
-            "content": payload.get("content", ""),
-            "metadata": {
-                "doc_type": payload.get("doc_type", ""),
-                "title": payload.get("title", ""),
-                "court": payload.get("court", ""),
-                "year": payload.get("year", ""),
-                "pdf_url": payload.get("pdf_url", ""),
-                "image_url": payload.get("image_url", ""),
-                "source_id": payload.get("source_id", ""),
-                "chunk_index": payload.get("chunk_index", 0),
-            },
-            "score": point.score if hasattr(point, 'score') else 0.0,
-        })
-    return results
+# ─── Judge profiles ───────────────────────────────────────────────────────────
+# What is being asked (one named judge, a Chief Justice, a list, a description)
+# is decided by the query-understanding step and arrives as arguments. The tool
+# only matches those arguments against the stored profiles — it does not
+# interpret the wording of the question.
+_COURT_JUDGE_TYPES = {"supreme_court": "sc_judge", "lahore_high_court": "lhc_judge",
+                      "islamabad_high_court": "isb_judge"}
+_JUDGE_CACHE_TTL = 600.0
+_judge_cache: Dict[str, Any] = {"at": 0.0, "profiles": []}
+_judge_cache_lock = threading.Lock()
+# Honorifics are how a court prints a name, not part of the name being matched.
+_NAME_TITLES = {"mr", "mrs", "ms", "miss", "dr", "justice", "chief", "honourable", "honorable",
+                "hon", "ble", "former", "the", "sir", "judge", "retired", "retd", "senior", "puisne"}
+JUDGE_FULL_PROFILES = 8     # up to this many judges are returned with full biographies
+JUDGE_ROSTER_LIMIT = 40     # longer lists are returned as a compact roster, capped here
 
 
-@tool
-def search_judge_profiles(query: str) -> str:
-    """
-    Search profiles and biographical information of Pakistani judges.
-    Use this when the user asks: who is a specific judge, a judge's history,
-    which judges presided over a type of case, or judicial appointment details.
+def _name_tokens(name: str) -> List[str]:
+    return [t for t in re.findall(r"[a-z]+", (name or "").lower()) if len(t) > 1 and t not in _NAME_TITLES]
 
-    Input: judge name, court name, or description of the judge being sought
-    Returns: judge profile information
-    """
-    from qdrant_client.models import Filter as QdrantFilter, FieldCondition, MatchValue, HasIdCondition
-    import logging
-    logger = logging.getLogger(__name__)
 
-    q_vec = embeddings_service.embed_query(query)
-    query_lower = query.lower()
-    query_norm = re.sub(r"[^a-z0-9]+", " ", query_lower).strip()
-    
-    logger.warning(f"[JUDGE-TOOL] Received query: {query}")
-    
-    # In Qdrant, we need to search each judge type separately since contains_any isn't available
-    # Include ALL judge doc_type variants (lhc_judge_new, lhc_judge, sc_judge, isb_judge)
-    judge_types = ["sc_judge", "lhc_judge", "lhc_judge_new", "isb_judge"]
-    
+def _load_judge_profiles() -> List[Dict]:
+    """Every judge profile, one entry per judge (their chunks merged in order).
+    The whole set is a few hundred records, so it is read once and kept for
+    ten minutes instead of being searched approximately on every question."""
+    from qdrant_client.models import Filter as QdrantFilter, FieldCondition, MatchAny
+    with _judge_cache_lock:
+        if _judge_cache["profiles"] and time.time() - _judge_cache["at"] < _JUDGE_CACHE_TTL:
+            return _judge_cache["profiles"]
     client = qdrant_service.get_qdrant_client()
-
-    # ── Detect which court the user is asking about ──
-    asks_sc = any(kw in query_lower for kw in ["supreme court", "sc ", "chief justice of pakistan"])
-    asks_ihc = any(kw in query_lower for kw in ["islamabad high court", "ihc", "islamabad court"])
-    asks_lhc = any(kw in query_lower for kw in ["lahore high court", "lhc", "lahore court"])
-    # If no court specified, it's general
-    court_filter = None
-    if asks_sc:
-        court_filter = "Supreme Court of Pakistan"
-    elif asks_ihc:
-        court_filter = "Islamabad High Court"
-    elif asks_lhc:
-        court_filter = "Lahore High Court"
-    
-    # ── Detect if user asks about FORMER or CURRENT judges ──
-    former_keywords = ["former", "retired", "ex-", "previous", "past", "old", "was ", "were ", "who was"]
-    asks_former = any(kw in query_lower for kw in former_keywords)
-    
-    # ── Detect if user asks about a SPECIFIC judge by name ──
-    import re as _re
-    # Match "justice <Name>", "judge <Name>", "chief justice <Name>" or full names like "Khadim Hussain Soomro" or single names like "Bashir"
-    # A name starts with a letter and is NOT a preposition/article
-    non_name_words = {"of", "the", "and", "or", "in", "at", "for", "from", "to", "is", "are", "was", "were", "who", "what", "tell", "about", "background", "history", "information", "profile"}
-    listing_words = {
-        "find", "list", "show", "all", "judges", "judge", "courts", "court", "named",
-        "with", "from", "in", "at", "current", "former", "sitting", "senior",
-    }
-    has_specific_name = False
-    soft_name_tokens: list[str] = []
-
-    def _normalize_name(value: str) -> str:
-        # Optimized regex to strip stacks of titles: "Honourable Chief Justice Mr. Justice Sardar..." -> "Sardar..."
-        cleaned = _re.sub(r"^(?:former\s+|retired\s+|honourable\s+|hon'ble\s+|mr\.?|mrs\.?|ms\.?|miss|dr\.?|justice|chief justice|chief judge|additional|sitting)\s+", "", value.strip(), flags=_re.IGNORECASE)
-        # Repeat once to handle stacked cases like "Honourable Mr. Justice"
-        cleaned = _re.sub(r"^(?:former\s+|retired\s+|honourable\s+|hon'ble\s+|mr\.?|mrs\.?|ms\.?|miss|dr\.?|justice|chief justice|chief judge|additional|sitting)\s+", "", cleaned.strip(), flags=_re.IGNORECASE)
-        cleaned = _re.sub(r"[^a-z0-9]+", " ", cleaned.lower())
-        return _re.sub(r"\s+", " ", cleaned).strip()
-
-    def _clean_extracted_name(value: str) -> str:
-        tokens = [t.strip(".,;:?!") for t in value.split() if t.strip(".,;:?!")]
-        cleaned_tokens = []
-        tail_stopwords = {
-            "the", "former", "current", "judge", "justice", "chief", "profile", "information",
-            "background", "history", "details", "about", "named", "name", "from", "in", "at",
-            "list", "find", "search", "who", "what", "was", "is", "of", "court", "courts",
-            "high", "lahore", "islamabad", "supreme", "pakistan", "honourable", "hon'ble",
-        }
-        for token in tokens:
-            if token.lower() in tail_stopwords:
-                continue # Skip stopword and continue
-            cleaned_tokens.append(token)
-        return " ".join(cleaned_tokens).strip()
-
-    is_listing_like = any(phrase in query_lower for phrase in [
-        "find judges", "list judges", "show judges", "judges from", "judges in",
-        "judges at", "judges named", "judges with", "current judges", "former judges",
-        "sitting judges", "chief justices", "all judges", "senior judges",
-    ])
-    
-    # Strategy 1: "chief justice <Name>", "chief judge <Name>", "justice <Name>" or "judge <Name>"
-    name_match = _re.search(r'(?:chief\s+)?(?:justice|judge)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', query, _re.IGNORECASE)
-    if name_match and name_match.group(1).lower() not in non_name_words:
-        extracted_candidate = _clean_extracted_name(name_match.group(1))
-        if extracted_candidate:
-            has_specific_name = True
-
-    # Strategy 2: Capitalized multi-word names like "Khadim Hussain Soomro"
-    if not has_specific_name and not is_listing_like:
-        # Look for capitalized names (at least two words starting with capital letters)
-        name_match = _re.search(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)', query)
-        if name_match:
-            potential_name = name_match.group(1).lower()
-            # Exclude common non-name words and listing-like phrases
-            if potential_name not in non_name_words and not any(stop in potential_name for stop in ["court", "justice", "judge"]):
-                has_specific_name = True
-
-    # Strategy 3: Single-word names only when the query itself is short and name-like.
-    # This avoids false positives such as "Find judges with the name Khan in Lahore High Court".
-    if not has_specific_name and not is_listing_like:
-        words = [w for w in query.split() if w]
-        if len(words) <= 3:
-            for word in words:
-                if word[0].isupper() and len(word) >= 4 and word.lower() not in non_name_words:
-                    has_specific_name = True
-                    break
-
-    if not has_specific_name:
-        soft_stopwords = non_name_words | listing_words | {
-            "lahore", "high", "court", "supreme", "islamabad", "pakistan",
-            "named", "name", "judges", "judge", "former", "current", "sitting",
-            "senior", "chief", "justices", "justice",  # 'justice' is a title, not a name
-        }
-        for word in query.split():
-            cleaned = word.strip(".,;:?!()[]{}\"'")
-            if cleaned and cleaned[0].isupper() and len(cleaned) >= 4 and cleaned.lower() not in soft_stopwords:
-                soft_name_tokens.append(cleaned.lower())
-    
-    logger.warning(f"[JUDGE-TOOL] asks_former={asks_former}, has_specific_name={has_specific_name}, asks_sc={asks_sc}, asks_ihc={asks_ihc}")
-    
-    # ── EARLY EXIT: If user asks about SC/IHC judges and we have no data ──
-    if asks_sc or asks_ihc:
-        # Check if we actually have data for that court
-        target_court = "sc_judge" if asks_sc else "isb_judge"
-        try:
-            target_filter = QdrantFilter(must=[
-                FieldCondition(key="doc_type", match=MatchValue(value=target_court))
-            ])
-            # Use scroll to count
-            points, _ = client.scroll(
-                collection_name=COLLECTION_NAME,
-                scroll_filter=target_filter,
-                limit=1,
-                with_payload=False,
-                with_vectors=False,
-            )
-            # If we got no points, count is 0
-            court_count = 1 if points else 0
-        except Exception:
-            court_count = 0
-        
-        court_name = "Supreme Court of Pakistan" if asks_sc else "Islamabad High Court"
-        if court_count == 0:
-            logger.warning(f"[JUDGE-TOOL] No {target_court} data in database. Returning honest message.")
-            return (f"⚠️ NO DATA AVAILABLE: The database currently does not contain any "
-                    f"{court_name} judge profiles. Only Lahore High Court judge data "
-                    f"is currently ingested ({405} judge profile chunks). "
-                    f"Please ingest {court_name} judge data to enable these queries.")
-
-    # ── Detect if this is a listing query (used by both strategies) ──
-    list_keywords = ["justices", "judges", "all", "list", "every", "were the", "are the"]
-    is_listing_query = any(kw in query_lower for kw in list_keywords)
-
-    # ── FEATURE: If user asked for SPECIFIC NAME, find ALL judges matching that name ──
-    # extracted_name initialized here so Strategy B can always reference it safely
-    extracted_name = None
-    if has_specific_name:
-        # Extract the judge name from query
-        # Look for patterns like "Justice X Y", "X Y Soomro", etc.
-        import re as name_re
-        name_patterns = [
-            r'(?:justice|judge|chief justice)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)',
-            r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
-        ]
-        
-        extracted_name = None
-        for pattern in name_patterns:
-            match = name_re.search(pattern, query, name_re.IGNORECASE)
-            if match:
-                extracted_name = _clean_extracted_name(match.group(1))
-                break
-        
-        if extracted_name:
-            extracted_name_lower = _normalize_name(extracted_name)
-            logger.warning(f"[JUDGE-TOOL] Extracted name: '{extracted_name}'")
-            
-            # Search database for all judges matching this name
-            all_matching = []
-            try:
-                # Filter scroll by judge doc_types — avoids pulling the entire collection.
-                # Previously scrolled 1000 points unfiltered = O(n) on every judge name query.
-                all_points = []
-                for jtype in judge_types:
-                    _type_filter = QdrantFilter(must=[
-                        FieldCondition(key="doc_type", match=MatchValue(value=jtype))
-                    ])
-                    _batch, _ = client.scroll(
-                        collection_name=COLLECTION_NAME,
-                        scroll_filter=_type_filter,
-                        limit=500,
-                        with_payload=True,
-                        with_vectors=False,
-                    )
-                    all_points.extend(_batch)
-
-                # Iterate all gathered points AFTER all batches have been collected
-                for point in all_points:
-                    payload = point.payload or {}
-                    doc_type = payload.get("doc_type", "")
-                    if doc_type not in judge_types:
-                        continue
-
-                    if court_filter and payload.get("court", "") != court_filter:
-                        continue
-
-                    judge_name = payload.get("judge_name", "")
-                    judge_name_norm = _normalize_name(judge_name)
-
-                    # Check if name matches EXACTLY on normalized text or is a safe substring match.
-                    # This is intentionally strict to avoid returning similar-but-wrong judges.
-                    if extracted_name_lower == judge_name_norm or extracted_name_lower in judge_name_norm:
-                        all_matching.append({
-                            "content": payload.get("content", ""),
-                            "metadata": {
-                                "doc_type": doc_type,
-                                "title": payload.get("title", "") or payload.get("judge_name", ""),
-                                "judge_name": payload.get("judge_name", ""),
-                                "court": payload.get("court", ""),
-                                "year": payload.get("year", ""),
-                                "pdf_url": payload.get("pdf_url", ""),
-                                "image_url": payload.get("image_url", ""),
-                                "source_id": payload.get("source_id", ""),
-                                "chunk_index": payload.get("chunk_index", 0),
-                                "status": payload.get("status", ""),
-                                "is_chief_justice": payload.get("is_chief_justice", False),
-                                "designation": payload.get("designation", ""),
-                            },
-                            "score": 10.0,  # High score for exact name match
-                        })
-                
-                if all_matching:
-                    logger.warning(f"[JUDGE-TOOL] Found {len(all_matching)} judge(s) matching '{extracted_name}'")
-                    for m in all_matching:
-                        logger.warning(f"  Match: {m['metadata']['judge_name']}")
-
-                    if soft_name_tokens:
-                        def _soft_name_boost(doc: dict) -> tuple[int, float]:
-                            meta = doc.get("metadata", {})
-                            candidate = _normalize_name(meta.get("judge_name", "") or meta.get("title", ""))
-                            token_hits = sum(1 for token in soft_name_tokens if token in candidate)
-                            return (token_hits, doc.get("score", 0.0))
-
-                        all_matching.sort(key=_soft_name_boost, reverse=True)
-                    
-                    # Format and return all matching judges
-                    max_output = 10
-                    return _format_results(all_matching[:max_output])
-            except Exception as e:
-                logger.warning(f"[JUDGE-TOOL] Error searching for name matches: {e}")
-    
-    # ── Strategy A: Current/sitting judges (not former, no specific name) ──
-    if not asks_former and not has_specific_name:
-        bm25_limit = 30 if is_listing_query else 15
-        rerank_top = 15 if is_listing_query else 5
-
-        # Restrict doc_type search to the requested court only (avoids mixing courts)
-        if asks_ihc:
-            active_judge_types = ["isb_judge"]
-        elif asks_sc:
-            active_judge_types = ["sc_judge"]
-        elif asks_lhc:
-            active_judge_types = ["lhc_judge", "lhc_judge_new"]
-        else:
-            active_judge_types = judge_types   # no specific court → search all
-
-        # Search judge profiles using keyword search
-        bm25_query = f"{query} sitting designation chief justice"
-        bm25_results = _bm25_search(
-            bm25_query,
-            top_k=bm25_limit,
-            doc_type_filter=active_judge_types,
-            court_filter=court_filter,
-        )
-        
-        logger.warning(f"[JUDGE-TOOL] BM25 results: {len(bm25_results)}")
-        for i, doc in enumerate(bm25_results):
-            status = doc['metadata'].get('status', '')
-            logger.warning(f"  BM25[{i}] title={doc['metadata']['title']}, score={doc['score']:.3f}, status={status}")
-
-        # Filter BM25 results to ONLY keep SITTING judges, prioritizing CURRENT Chief Justices
-        active_results = []
-        current_chief_justices = []
-
-        for doc in bm25_results:
-            status = (doc['metadata'].get('status') or '').upper()
-            is_chief = doc['metadata'].get('is_chief_justice', False)
-            designation_lower = (doc['metadata'].get('designation') or '').lower()
-            content_lower = doc["content"].lower()
-
-            # Treat None/empty status as ACTIVE (data gap — assume sitting unless explicitly FORMER)
-            is_former = (status == 'FORMER') or ('former' in content_lower[:120] and 'former chief' not in designation_lower[:80])
-
-            # Detect CJ via flag, designation, OR judge_name/title containing 'Chief Justice'
-            title_lower = (doc['metadata'].get('title') or doc['metadata'].get('judge_name') or '').lower()
-            is_cj = is_chief or 'chief justice' in designation_lower or 'chief justice' in title_lower
-
-            if not is_former:
-                active_results.append(doc)
-                if is_cj:
-                    current_chief_justices.append(doc)
-        
-        # Priortize Chief Justices ONLY when user explicitly asks about the Chief Justice.
-        # For general listing queries ("list all sitting judges"), keep ALL active results.
-        asks_cj_specifically = any(kw in query_lower for kw in [
-            "chief justice", "chief judge", "cj of"
-        ])
-        if current_chief_justices and asks_cj_specifically and not is_listing_query:
-            # Return CJ immediately — don’t merge with vector results that the
-            # cross-encoder will then use to demote the correct CJ in reranking.
-            logger.warning(f"[JUDGE-TOOL] CJ query — returning {len(current_chief_justices)} CJ result(s) directly.")
-            return _format_results(current_chief_justices[:rerank_top])
-        
-        logger.warning(f"[JUDGE-TOOL] Active BM25 results (SITTING): {len(active_results)}, CURRENT CJ: {len(current_chief_justices)}")
-        for doc in active_results:
-            status = doc['metadata'].get('status', 'UNKNOWN')
-            is_chief = doc['metadata'].get('is_chief_justice', False)
-            logger.warning(f"  Active: {doc['metadata']['title']} (status={status}, chief_justice={is_chief})")
-
-        # If we have enough active results, rerank only them (don’t mix in vector results)
-        if len(active_results) >= 3:
-            final = _rerank(query, active_results, top_k=rerank_top)
-        else:
-            # Fallback: also do vector search if BM25 didn’t find enough active judges
-            vector_results = []
-            for jtype in active_judge_types:
-                results = _qdrant_vector_search(
-                    q_vec,
-                    top_k=bm25_limit,
-                    doc_type_filter=jtype,
-                    court_filter=court_filter,
-                )
-                vector_results.extend(results)
-            
-            # Only keep active vector results (SITTING judges, prioritize CURRENT Chief Justices)
-            active_vector = []
-            current_cj_vector = []
-            
-            for d in vector_results:
-                status = (d['metadata'].get('status') or '').upper()
-                is_chief = d['metadata'].get('is_chief_justice', False)
-                designation_lower = (d['metadata'].get('designation') or '').lower()
-                content_lower = d["content"].lower()
-
-                is_former = (status == 'FORMER') or ('former' in content_lower[:120] and 'former chief' not in designation_lower[:80])
-
-                if not is_former:
-                    active_vector.append(d)
-                    # Check flag, designation, AND judge_name/title
-                    title_lower_v = (d['metadata'].get('title') or d['metadata'].get('judge_name') or '').lower()
-                    if is_chief or 'chief justice' in designation_lower or 'chief justice' in title_lower_v:
-                        current_cj_vector.append(d)
-            
-            # Prioritize CURRENT chief justices from vector search  
-            if current_cj_vector:
-                active_vector = current_cj_vector
-
-            # Merge active from both sources, deduplicate
-            seen_keys = set()
-            merged = []
-            for doc in active_results + active_vector:
-                key = (doc["metadata"].get("title", ""), doc["metadata"].get("chunk_index", 0))
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    merged.append(doc)
-
-            if merged:
-                final = _rerank(query, merged, top_k=rerank_top)
-            else:
-                # Last resort: rerank all vector results
-                final = _rerank(query, vector_results, top_k=rerank_top)
-
-        # ── BOOST Chief Justices in final ranking ──
-        # Prioritize CJ via flag, designation, or judge_name/title
-        cj_in_final = []
-        other_in_final = []
-        for doc in final:
-            is_chief = doc['metadata'].get('is_chief_justice', False)
-            desig_l = (doc['metadata'].get('designation') or '').lower()
-            title_l = (doc['metadata'].get('title') or doc['metadata'].get('judge_name') or '').lower()
-            if is_chief or 'chief justice' in desig_l or 'chief justice' in title_l:
-                cj_in_final.append(doc)
-            else:
-                other_in_final.append(doc)
-
-        final = cj_in_final + other_in_final
-
-        if soft_name_tokens and final:
-            def _soft_name_hits(doc: dict) -> int:
-                meta = doc.get("metadata", {})
-                candidate = _normalize_name(meta.get("judge_name", "") or meta.get("title", ""))
-                return sum(1 for token in soft_name_tokens if token in candidate)
-
-            name_filtered = [doc for doc in final if _soft_name_hits(doc) > 0]
-            if name_filtered:
-                final = sorted(
-                    name_filtered,
-                    key=lambda doc: (
-                        _soft_name_hits(doc),
-                        doc.get("rerank_score", doc.get("score", 0.0)),
-                    ),
-                    reverse=True,
-                )
-            # If soft filter eliminates all results, don't show an error — just
-            # return the best active results we have (avoids false 'no data' messages
-            # when the query words like 'Pakistan' or 'Justice' aren't in judge names)
-
-        logger.warning(f"[JUDGE-TOOL] Final results (after CJ boost): {len(final)}")
-        for i, doc in enumerate(final):
-            is_chief = doc['metadata'].get('is_chief_justice', False)
-            logger.warning(f"  Final[{i}] title={doc['metadata']['title']}, is_chief={is_chief}, rerank={doc.get('rerank_score', 0):.3f}")
-
-    # ── Strategy B: User explicitly wants FORMER judges OR specific named judge ──
-    else:
-        fetch_limit = 25 if is_listing_query else 15
-
-        # BM25 search
-        bm25_results = _bm25_search(query, top_k=fetch_limit, doc_type_filter=judge_types)
-
-        # Vector search — search each judge type separately
-        vector_results = []
-        for jtype in judge_types:
-            results = _qdrant_vector_search(q_vec, top_k=fetch_limit, doc_type_filter=jtype)
-            vector_results.extend(results)
-
-        # Merge and deduplicate (BM25 first so name-matches rank higher)
-        seen_keys = set()
-        merged = []
-        for doc in bm25_results + vector_results:
-            key = (doc["metadata"].get("title", ""), doc["metadata"].get("chunk_index", 0))
-            if key not in seen_keys:
-                seen_keys.add(key)
-                merged.append(doc)
-
-        if has_specific_name and extracted_name:
-            # ── SPECIFIC NAME: skip cross-encoder, use keyword-match scoring ──
-            # The cross-encoder (MS MARCO) has no knowledge of Pakistani proper names
-            # and routinely gives negative scores to correct matches, destroying retrieval.
-            # Instead: score each doc by how many name tokens appear in judge_name/content.
-            name_tokens = extracted_name.lower().split()
-            for doc in merged:
-                jn = doc["metadata"].get("judge_name", "").lower()
-                ct = doc.get("content", "").lower()
-                hit_count = sum(1 for t in name_tokens if t in jn or t in ct)
-                doc["rerank_score"] = float(hit_count)
-                doc["metadata"]["rerank_score"] = float(hit_count)
-            # Sort by name-token hits descending, then take top results
-            merged.sort(key=lambda d: d.get("rerank_score", 0.0), reverse=True)
-            final = merged[:8]
-        else:
-            # ── FORMER / GENERIC: cross-encoder reranker is acceptable here ──
-            final = _rerank(query, merged, top_k=15 if is_listing_query else 8)
-
-        # Only boost former judges when user explicitly asks for former
-        if asks_former:
-            former_final = []
-            active_final = []
-            for doc in final:
-                cl = doc["content"].lower()
-                has_former = any(w in cl for w in ["former chief justice", "retired", "former judge", "past chief justice"])
-                if has_former:
-                    former_final.append(doc)
-                else:
-                    active_final.append(doc)
-            final = former_final + active_final
-
-    # ── Final court-mismatch check ──
-    # If ALL results are from a different court than what the user asked about, warn
-    if final:
-        result_courts = set()
-        for doc in final[:5]:
-            ct = doc.get("content", "").lower()
-            if "lahore high court" in ct:
-                result_courts.add("lhc")
-            elif "supreme court" in ct:
-                result_courts.add("sc")
-            elif "islamabad" in ct:
-                result_courts.add("ihc")
-        
-        # Guard: only warn when retrieved docs genuinely don't contain the requested court.
-        # Check actual doc_type metadata, NOT content text (content may not have the abbreviation).
-        has_sc_docs  = any(d.get("metadata", {}).get("doc_type") == "sc_judge"  for d in final)
-        has_ihc_docs = any(d.get("metadata", {}).get("doc_type") == "isb_judge" for d in final)
-
-        if asks_sc and not has_sc_docs:
-            return "⚠️ No Supreme Court judge profiles were found for this query in the database."
-        if asks_ihc and not has_ihc_docs:
-            return "⚠️ No Islamabad High Court judge profiles were found for this query in the database."
-
-    # Determine output limit: listing queries get more results
-    max_output = 10 if is_listing_query else 5
-
-    return _format_results(final[:max_output])
-
-
-@tool
-def search_by_court_and_topic(court: str, topic: str) -> str:
-    """
-    Search cases or documents from a SPECIFIC court on a SPECIFIC topic.
-    Use this when the user explicitly specifies a court AND a legal topic.
-
-    court: e.g. 'Supreme Court of Pakistan', 'Islamabad High Court'
-    topic: the legal subject matter to search for
-
-    Returns: top relevant court-specific documents on the topic
-    """
-    court_doc_types = _map_court_to_case_doc_types(court)
-    if not court_doc_types:
-        return (
-            "⚠️ NO MATCHING DATA: Court not recognized. "
-            "Please use Supreme Court of Pakistan or Islamabad High Court."
-        )
-
-    hits = _hybrid_search(topic, top_k=28, doc_type_filter=court_doc_types)
-    diverse = _mmr(hits, top_k=10)
-    final = _rerank(topic, diverse, top_k=6)
-    return _format_results(final)
-
-
-@tool
-def search_by_year_and_topic(year: str, topic: str) -> str:
-    """
-    Search legal documents from a SPECIFIC YEAR on a topic.
-    Use this when the user asks about cases or laws from a particular year.
-
-    year: 4-digit year string e.g. '2022'
-    topic: the legal subject matter
-
-    Returns: relevant documents from that year
-    """
-    hits = _hybrid_search(topic, top_k=20, year_filter=year)
-    diverse = _mmr(hits, top_k=10)
-    final = _rerank(topic, diverse, top_k=5)
-    return _format_results(final)
-
-
-@tool
-def retrieve_with_full_pipeline(query: str) -> str:
-    """
-    Run the complete RAG pipeline across currently ingested Pakistani case-law corpus.
-    Use this as the FINAL synthesis step after gathering info from specific tools,
-    OR when the query is broad.
-
-    Input: the original or refined user query
-    Returns: top relevant documents across SC/IHC/LHC case-law corpus
-    """
-    doc_types = _infer_case_doc_types(query)
-    complex_query = _is_complex_query_text(query)
-
-    # HYBRID SEARCH (Enriched Vector + Optimized BM25)
-    hybrid_k = 24 if complex_query else 16
-    mmr_k =  8 if complex_query else  6
-    rerank_k = 5 if complex_query else  4
-
-    enriched = query_rewriter_service.enrich_query(query)
-    all_results = _hybrid_search(enriched, top_k=hybrid_k, doc_type_filter=doc_types)
-
-    diverse = _mmr(all_results, top_k=mmr_k, lambda_mult=0.5)
-    final = _rerank(query, diverse, top_k=rerank_k)
-    return _format_results(final)
-
-
-@tool
-def analyze_legal_question(query: str) -> str:
-    """
-    Analyze and decompose a complex legal question into its components.
-    Use this FIRST when the query is long, complex, involves multiple legal issues,
-    or when you need to identify what type of law / court / topic is involved
-    before deciding which other tools to call.
-
-    Input: user's raw legal question
-    Returns: structured breakdown of legal issues, applicable law areas,
-             recommended courts to search, and a search strategy
-    """
-    from backend.services.llm import llm_service
-    llm = llm_service.get_llm()
-
-    analysis_prompt = f"""You are a Pakistani legal expert. Analyze this legal query and produce a structured breakdown.
-
-Query: {query}
-
-Respond in this exact format:
-LEGAL_ISSUES: [comma-separated list of legal issues/offences/topics]
-LAW_AREAS: [Criminal / Civil / Constitutional / Family / Property / Commercial / Administrative]
-RELEVANT_COURTS: [Supreme Court / Lahore High Court / Islamabad High Court / all]
-RELEVANT_STATUTES: [list any Pakistani laws/acts/sections that seem relevant]
-KEY_SEARCH_TERMS: [optimized search terms for legal database]
-COMPLEXITY: [Simple / Multi-issue / Requires multiple searches]
-STRATEGY: [1-2 sentences: what tools to call next and why]"""
-
-    response = llm.invoke(analysis_prompt)
-    return response.content
-
-
-@tool
-def check_database_coverage(topic: str) -> str:
-    """
-    Check how many documents exist for a given topic in the database.
-    Use this when you're unsure if the database has enough coverage on a topic,
-    or to tell the user what data is available.
-
-    Input: topic or document type to check
-    Returns: count stats and coverage information
-    """
-    from qdrant_client.models import Filter as QdrantFilter, FieldCondition, MatchValue
-    
-    client = qdrant_service.get_qdrant_client()
-    
+    qfilter = QdrantFilter(must=[FieldCondition(key="doc_type", match=MatchAny(any=list(_JUDGE_DOC_TYPES)))])
+    points, offset = [], None
     try:
-        # Check if collection exists
-        collection_info = client.get_collection(COLLECTION_NAME)
-    except Exception:
-        return "Database collection does not exist yet. Please run ingestion first."
+        while True:
+            batch, offset = client.scroll(collection_name=COLLECTION_NAME, scroll_filter=qfilter, limit=500,
+                                          offset=offset, with_payload=True, with_vectors=False)
+            points.extend(batch)
+            if offset is None:
+                break
+    except Exception as e:
+        if _judge_cache["profiles"]:
+            return _judge_cache["profiles"]          # stale is better than nothing
+        raise SearchUnavailable(f"vector database: {e.__class__.__name__}") from e
 
-    # Count total points
-    total = collection_info.points_count or 0
+    grouped: Dict[tuple, List[Dict]] = {}
+    for p in points:
+        d = _map_point(p)
+        m = d["metadata"]
+        name = (m.get("judge_name") or m.get("title") or "").strip()
+        if name:
+            grouped.setdefault((m.get("doc_type"), name), []).append(d)
+    profiles = []
+    for (_, name), chunks in grouped.items():
+        chunks.sort(key=lambda c: c["metadata"].get("chunk_index", 0))
+        texts = list(dict.fromkeys(t for t in ((c.get("content") or "").strip() for c in chunks) if t))
+        head = chunks[0]
+        meta = dict(head["metadata"])
+        for c in chunks[1:]:                         # a later chunk may carry a field the first lacks
+            for k, v in c["metadata"].items():
+                if v and not meta.get(k):
+                    meta[k] = v
+        meta["judge_name"] = name
+        meta["title"] = meta.get("title") or name
+        profiles.append({"content": "\n\n".join(texts), "metadata": meta, "score": 0.0,
+                         "_tokens": set(_name_tokens(name))})
+    with _judge_cache_lock:
+        _judge_cache.update(at=time.time(), profiles=profiles)
+    return profiles
 
-    # Count per doc_type
-    counts = {}
-    for dt in ["sc_case", "isb_case", "lhc_case", "federal_law", "punjab_law",
-               "sc_judge", "isb_judge", "lhc_judge"]:
-        try:
-            doc_filter = QdrantFilter(must=[
-                FieldCondition(key="doc_type", match=MatchValue(value=dt))
-            ])
-            # Use count API if available, otherwise use scroll
-            try:
-                count = client.count(
-                    collection_name=COLLECTION_NAME,
-                    scroll_filter=doc_filter,
-                )
-                counts[dt] = count.count
-            except:
-                # Fallback: scroll and count
-                points, _ = client.scroll(
-                    collection_name=COLLECTION_NAME,
-                    scroll_filter=doc_filter,
-                    limit=10000,
-                    with_payload=False,
-                    with_vectors=False,
-                )
-                counts[dt] = len(points) if points else 0
-        except Exception:
-            counts[dt] = 0
 
-    lines = [f"Total chunks in database: {total:,}", "", "Breakdown by document type:"]
-    for dt, cnt in counts.items():
-        lines.append(f"  {dt}: {cnt:,} chunks")
-    lines.append(f"\nSearch topic requested: '{topic}'")
-    return "\n".join(lines)
+def _is_former(profile: Dict) -> bool:
+    m = profile["metadata"]
+    return (m.get("status") or "").upper() == "FORMER" or (m.get("designation") or "").lower().startswith("former")
+
+
+def _is_chief_justice(profile: Dict) -> bool:
+    m = profile["metadata"]
+    return bool(m.get("is_chief_justice")) or "chief justice" in (m.get("designation") or "").lower()
+
+
+def _by_status(profiles: List[Dict], status: str) -> List[Dict]:
+    if status == "sitting":
+        return [p for p in profiles if not _is_former(p)]
+    if status == "former":
+        return [p for p in profiles if _is_former(p)]
+    return profiles
+
+
+def _scored(profiles: List[Dict], score: float) -> List[Dict]:
+    out = []
+    for p in profiles:
+        d = {k: v for k, v in p.items() if k != "_tokens"}
+        d["metadata"] = dict(p["metadata"])
+        d["score"] = d["rerank_score"] = score
+        out.append(d)
+    return out
+
+
+def _match_name(profiles: List[Dict], name: str):
+    """Profiles whose name contains every word of the asked name. Returns
+    (matches, exact) — exact is False when only a looser match was found
+    (spelling variants such as Mansur/Mansoor, or all but one word)."""
+    asked = _name_tokens(name)
+    if not asked:
+        return [], False
+
+    def extra(p):                                    # closest-length name first, sitting before former
+        return (len(p["_tokens"]) - len(asked), _is_former(p))
+
+    exact = [p for p in profiles if all(t in p["_tokens"] for t in asked)]
+    if exact:
+        return sorted(exact, key=extra), True
+
+    def similar(t, have):
+        # Short words (Ali / Alvi, Khan / Khar) must match exactly; longer ones may differ by a letter.
+        return t in have or (len(t) >= 5 and any(SequenceMatcher(None, t, h).ratio() >= 0.8 for h in have))
+
+    loose = [p for p in profiles if all(similar(t, p["_tokens"]) for t in asked)]
+    if not loose and len(asked) >= 3:
+        loose = [p for p in profiles if sum(similar(t, p["_tokens"]) for t in asked) >= len(asked) - 1]
+    return sorted(loose, key=extra), False
+
+
+def _with_note(out: str, note: str) -> str:
+    if note and out.startswith("==="):
+        head, _, rest = out.partition("\n")
+        return f"{head}\n{note}\n{rest}"
+    return out
+
+
+def _judge_roster(profiles: List[Dict], score: float = 10.0) -> str:
+    """A few judges → full profiles. Many → a compact roster (name, court,
+    designation, status) so a list request can show the whole bench."""
+    if len(profiles) <= JUDGE_FULL_PROFILES:
+        return _format_results(_scored(profiles, score))
+    shown = _scored(profiles[:JUDGE_ROSTER_LIMIT], score)
+    for d in shown:
+        d["content"] = ""
+        d["metadata"]["image_url"] = ""
+    note = (f"ℹ️ ROSTER: {len(profiles)} judges match; "
+            + (f"only the first {len(shown)} are shown — say so. " if len(profiles) > len(shown) else "all are shown. ")
+            + "Names and designations only (no biographies).")
+    return _with_note(_format_results(shown), note)
+
+
+def _judge_semantic_search(query: str, doc_types: List[str], status: str, profiles: List[Dict]) -> str:
+    """Find judges by what their biography says (education, career, background)."""
+    hits = _hybrid_search(query, top_k=30, doc_type_filter=doc_types)
+    by_key = {(p["metadata"].get("doc_type"), p["metadata"]["judge_name"]): p for p in _by_status(profiles, status)}
+    hits = [h for h in hits if (h["metadata"].get("doc_type"), (h["metadata"].get("judge_name") or "").strip()) in by_key]
+    if not hits:
+        return "NO DATA AVAILABLE — no judge profile in the collection matches this description."
+    final = []
+    for h in _rerank(query, hits, top_k=5):
+        full = by_key[(h["metadata"].get("doc_type"), h["metadata"]["judge_name"].strip())]
+        final.extend(_scored([full], h.get("rerank_score", h.get("score", 0.0))))
+    return _format_results(final)
+
+
+@tool
+def search_judge_profiles(query: str, request: str = "describe", name: Optional[str] = None,
+                          courts: Optional[List[str]] = None, status: str = "any") -> str:
+    """
+    Look up profiles of Pakistani judges (Supreme Court, Lahore High Court, Islamabad High Court).
+
+    query: the question in English (used when searching biographies by description)
+    request: named_judge | chief_justice | list | describe
+    name: named_judge — the judge's name, without titles
+    courts: optional — supreme_court, lahore_high_court, islamabad_high_court
+    status: sitting | former | any
+    Returns: the matching judge profile(s)
+    """
+    doc_types = [_COURT_JUDGE_TYPES[c] for c in (courts or []) if c in _COURT_JUDGE_TYPES] or list(_JUDGE_DOC_TYPES)
+    everyone = _load_judge_profiles()
+    pool = [p for p in everyone if p["metadata"].get("doc_type") in doc_types]
+
+    if request == "named_judge" and name:
+        matches, exact = _match_name(pool, name)
+        if not matches and len(pool) != len(everyone):
+            matches, exact = _match_name(everyone, name)      # the user may have named the wrong court
+        if not matches:
+            return (f"NO DATA AVAILABLE — no judge named '{name}' is in the collection "
+                    "(it holds profiles of Supreme Court, Lahore High Court and Islamabad High Court judges).")
+        out = _format_results(_scored(matches[:JUDGE_FULL_PROFILES], 10.0 if exact else 9.0))
+        if not exact:
+            out = _with_note(out, f"ℹ️ NAME MATCH: no profile is named exactly '{name}'. The profile(s) below are the "
+                                  "closest names — state the name as stored and that it may be a different person.")
+        return out
+
+    if request == "chief_justice":
+        chiefs = [p for p in pool if _is_chief_justice(p)]
+        chosen = _by_status(chiefs, "former" if status == "former" else "sitting")
+        if not chosen and status == "any":
+            chosen = chiefs
+        if chosen:
+            return _judge_roster(chosen)
+        # The court's records carry no Chief Justice marker — look in the biographies.
+        return _judge_semantic_search(query, doc_types, status, everyone)
+
+    if request == "list":
+        chosen = sorted(_by_status(pool, status), key=lambda p: (not _is_chief_justice(p) or _is_former(p),
+                                                                  p["metadata"]["judge_name"]))
+        if not chosen:
+            return "NO DATA AVAILABLE — no judge profiles in the collection match this court and status."
+        return _judge_roster(chosen)
+
+    return _judge_semantic_search(query, doc_types, status, everyone)
+
+
+@tool
+def retrieve_with_full_pipeline(query: str, years: Optional[List[str]] = None,
+                                doc_types: Optional[List[str]] = None, broad: bool = True) -> str:
+    """
+    Run the complete RAG pipeline across the ingested Pakistani case-law and statute corpus.
+    Use this for broad, provision-focused or statutory questions.
+
+    query: the original or refined user query
+    years: optional list of decision years to restrict to, e.g. ["2018", "2019", "2020"]
+    doc_types: optional collections to restrict to
+    broad: return more cases (default for this tool)
+    Returns: top relevant documents across SC/IHC/LHC case law and statutes
+    """
+    return _run_case_search(query, years, doc_types, broad)
+
 
 
 # ─── Export all tools as a list ───────────────────────────────────────────────
+# Only tools the agent actually dispatches (see nodes.dispatch_search / refine_and_retry).
 ALL_TOOLS = [
-    analyze_legal_question,
     search_case_law,
-    # search_federal_laws,    # Not yet ingested (LHC-only scope)
-    # search_punjab_laws,     # Not yet ingested (LHC-only scope)
-    search_judge_profiles,
-    search_by_court_and_topic,
-    search_by_year_and_topic,
     retrieve_with_full_pipeline,
-    check_database_coverage,
+    search_judge_profiles,
 ]

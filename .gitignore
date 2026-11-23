@@ -44,3 +44,10 @@ models/
 # ── Logs ─────────────────────────────────────────────────────────────────────
 *.log
 logs/
+
+# Document vault (local storage backend; encrypted files)
+storage/
+
+# Evaluation (Ragas) — separate environment and judge cache
+evaluation/.venv/
+evaluation/.ragas_cache/

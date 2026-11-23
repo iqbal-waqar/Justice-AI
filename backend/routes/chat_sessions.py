@@ -34,7 +34,6 @@ def get_session(
 ):
     return interactor.get_session(session_id, current_user.id, db)
 
-# ── Messages ──────────────────────────────────────────────────────────────
 @router.get("/chat/sessions/{session_id}/messages", response_model=List[MessageResponse])
 def get_session_messages(
     session_id: int,
@@ -51,15 +50,6 @@ def add_session_message(
     db: Session = Depends(get_db)
 ):
     return interactor.add_message(session_id, current_user.id, data, db)
-
-# Backward-compatible alias for the older /history path.
-@router.get("/chat/sessions/{session_id}/history", response_model=List[MessageResponse])
-def get_session_history(
-    session_id: int,
-    current_user: User = Depends(auth_interactor.resolve_current_user),
-    db: Session = Depends(get_db)
-):
-    return interactor.get_session_history(session_id, current_user.id, db)
 
 @router.put("/chat/sessions/{session_id}", response_model=SessionResponse)
 def update_session(

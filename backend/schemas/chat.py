@@ -9,27 +9,14 @@ class ChatRequest(BaseModel):
     filters: Optional[dict] = Field(
         default=None, description="Optional filters: court, doc_type, year"
     )
-
-class SourceDocument(BaseModel):
-    content: Optional[str] = None
-    doc_type: Optional[str] = None
-    title: Optional[str] = None
-    judge_name: Optional[str] = None
-    court: Optional[str] = None
-    year: Optional[str] = None
-    score: Optional[float] = None
-    pdf_url: Optional[str] = None
-    image_url: Optional[str] = None
-
-class ChatResponse(BaseModel):
-    answer: str
-    sources: List[SourceDocument]
-    query: str
-    agent_trace: Optional[List[str]] = Field(
-        default=[], description="Step-by-step agent reasoning trace"
+    language: str = Field(
+        default="auto", pattern="^(auto|en|ur)$",
+        description="Answer language: 'ur' Urdu, 'en' English, 'auto' = Urdu when the question is in Urdu script",
     )
 
-# ── Chat Session Schemas ──
+    def cache_filters(self) -> dict:
+        return {**(self.filters or {}), "_lang": self.language}
+
 class SessionCreate(BaseModel):
     title: Optional[str] = "New Chat"
     case_reference: Optional[str] = None

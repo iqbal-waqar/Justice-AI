@@ -1,0 +1,164 @@
+[
+  {
+    "id": "crim-01",
+    "category": "Criminal law: bail",
+    "language": "en",
+    "expect": "answer",
+    "question": "What are the grounds for pre-arrest bail under Section 498 Cr.P.C.?",
+    "reference": "Pre-arrest bail is an extraordinary relief, granted only in extraordinary situations to protect innocent persons from victimisation through abuse of law for ulterior motives. It is not a substitute for post-arrest bail. The accused must satisfy the conditions of Section 497(2) Cr.P.C., i.e. show reasonable grounds that he is not guilty or that the case calls for further inquiry, and must also show that the intended arrest is motivated by ulterior motives such as humiliating or injuring him, or that he would suffer irreparable harm if arrested. Section 498 Cr.P.C. is an independent provision, but bail under it can only be granted to a person who is present in court, and the stringent criteria do not stop the court from granting it where the record plainly shows false implication.",
+    "reference_sources": [
+      "Ahtisham Ali v. The State (Supreme Court, 2023)",
+      "Malik Tariq Hanif Awan v. State (2020 LHC 1794)",
+      "Muhammad Fayyaz v. State (2019 LHC 3198)"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "stat-01",
+    "category": "Statute: Pakistan Penal Code",
+    "language": "en",
+    "expect": "answer",
+    "question": "What is the punishment for dishonestly issuing a cheque under Section 489-F PPC?",
+    "reference": "Under Section 489-F PPC, whoever dishonestly issues a cheque towards repayment of a loan or fulfilment of an obligation which is dishonoured on presentation is punishable with imprisonment which may extend to three years, or with fine, or with both. It is a defence if the drawer proves, with the burden of proof on him, that he had made arrangements with his bank to ensure the cheque would be honoured and that the bank was at fault in not honouring it. The essential ingredients are dishonesty and issuance of the cheque towards repayment of a loan or fulfilment of an obligation.",
+    "reference_sources": [
+      "Muhammad Anwar v. The State (2019 PCrLJ 1244, Islamabad High Court)",
+      "Kabir Akber v. The State (Lahore High Court, 2022)",
+      "Hayat Kimya Pakistan v. Humair Yusuf (Lahore High Court, 2023)"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "fam-01",
+    "category": "Family law: khula",
+    "language": "en",
+    "expect": "answer",
+    "question": "Does a wife have to return the dower to get khula?",
+    "reference": "Generally, where a wife obtains khula she must return the dower and benefits received from the husband, or remit the dower if not yet received, and she cannot later claim the dower as of right. However, return of dower is not an indispensable condition for the grant of khula: once the Family Court finds the wife entitled to khula it must decree dissolution, and non-return of dower only creates a civil liability without affecting the validity of the decree. Where the wife seeks khula because of the husband's fault and gives reasonable justification, she should not be required to return the dower already received, and the court decides how much of the benefits should be returned in the circumstances.",
+    "reference_sources": [
+      "Muhammad Kamran v. Mst. Sumera Majeed (2018 LHC 3749)",
+      "Shaza Tehseen v. Tehseen Butt (Islamabad High Court, 2022)",
+      "Asif Mehmood v. ADJ Sahiwal (Lahore High Court, 2025)"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "stat-02",
+    "category": "Statute: contract law",
+    "language": "en",
+    "expect": "answer",
+    "question": "What makes an agreement a contract under Section 10 of the Contract Act, 1872?",
+    "reference": "Under Section 10 of the Contract Act, 1872, all agreements are contracts if they are made by the free consent of parties competent to contract, for a lawful consideration and with a lawful object, and are not expressly declared to be void by the Act. This does not affect any other law requiring a contract to be in writing, made in the presence of witnesses, or registered. The Supreme Court has held that the essentials of a valid contract are an offer communicated, its unconditional acceptance and consideration, and that a contract need not be in writing and may even be oral.",
+    "reference_sources": [
+      "Contract Act, 1872",
+      "Federal Government Employees Housing Authority v. Granite Enterprises (Islamabad High Court, 2025)",
+      "Muhammad Sattar v. Tariq Javaid (2017 SCMR 98)"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "urdu-01",
+    "category": "Criminal law: Urdu question",
+    "language": "ur",
+    "expect": "answer",
+    "question": "قتل کے مقدمے میں ایف آئی آر تاخیر سے درج ہونے کا ملزم پر کیا اثر پڑتا ہے؟",
+    "question_en": "What is the effect on the accused when the FIR in a murder case is lodged late?",
+    "reference": "An unexplained delay in lodging the FIR in a murder case casts suspicion on the prosecution story, because the FIR is the cornerstone of the prosecution case; the doubt it creates goes to the benefit of the accused, and courts have treated a long unexplained delay as suggesting the occurrence was unwitnessed or that the account was made up after deliberation. Where the delay is satisfactorily explained, for example by the time spent taking the injured to hospital, it is not held against the complainant.",
+    "reference_sources": [
+      "Karamat Ali v. The State (2025 LHC 3719)",
+      "Shakeel Ahmad v. The State (Lahore High Court, 2025)",
+      "Muhammad Amjad Shahzad v. Muhammad Akhtar Shahzad (Supreme Court, 2022)"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "fed-01",
+    "category": "Federal law: Specific Relief Act",
+    "language": "en",
+    "expect": "answer",
+    "question": "What kind of suit can be filed under Section 42 of the Specific Relief Act, 1877?",
+    "reference": "Section 42 of the Specific Relief Act, 1877 allows a suit for a declaration: any person entitled to any legal character, or to any right to any property, may sue any person who denies, or is interested in denying, his title to that character or right, and the court may in its discretion declare that he is so entitled without the plaintiff asking for any further relief. However, the court shall not make such a declaration where the plaintiff, being able to seek further relief than a mere declaration of title, omits to do so. Such a suit is to be decided within six months and an appeal within ninety days. Under Section 43, the declaration binds only the parties and persons claiming through them.",
+    "reference_sources": [
+      "Specific Relief Act, 1877, ss. 42-43"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "fed-02",
+    "category": "Federal law: Civil Procedure Code",
+    "language": "en",
+    "expect": "answer",
+    "question": "On what grounds can a decree be challenged under Section 12(2) CPC?",
+    "reference": "Under Section 12(2) CPC, a person challenging the validity of a judgment, decree or order on the plea of fraud, misrepresentation or want of jurisdiction must apply to the court that passed the final judgment, decree or order, and not file a separate suit. The grounds are that the decree was passed without jurisdiction, was obtained by misrepresentation of facts, or was obtained by fraud. The scope of Section 12(2) is not limited to fraud; it includes misrepresentation, meaning a false statement of facts. A decree passed without jurisdiction is void and can be set aside under this section.",
+    "reference_sources": [
+      "Muhammad Zia ud Din v. Ghaffar Khan (Islamabad High Court, 2020)",
+      "Province of Punjab v. District Judge (Lahore High Court, 2021)",
+      "Muhammad Aslam v. Haji Abdul Hakim Khan (Lahore High Court, 2019)"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "pun-01",
+    "category": "Punjab law: women protection",
+    "language": "en",
+    "expect": "answer",
+    "question": "What orders can a court pass under the Punjab Protection of Women against Violence Act 2016?",
+    "reference": "The Act provides for interim orders, protection orders, residence orders and monetary orders. If satisfied that violence has been or is likely to be committed, the court may pass a protection order directing the defendant, among other things, not to communicate with the aggrieved person, to stay away from her or at a set distance, to wear a GPS ankle or wrist bracelet for grave violence that endangers her life, dignity or reputation, to move out of the house in case of grave violence, to surrender weapons or not obtain a firearm licence, not to aid or abet violence, and not to enter her workplace or places she frequents. In cases of domestic violence the court may additionally pass a residence order: that she shall not be evicted from the house save in accordance with law, that she has the right to stay in the house, that she may be relocated to a shelter home, and that the defendant deliver to her property or documents she is entitled to.",
+    "reference_sources": [
+      "Punjab Protection of Women against Violence Act 2016, ss. 7-8"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "pun-02",
+    "category": "Punjab law: rent",
+    "language": "en",
+    "expect": "answer",
+    "question": "When can a landlord seek eviction of a tenant under the Punjab Rented Premises Act 2009?",
+    "reference": "Under Section 15 of the Punjab Rented Premises Act 2009, a landlord may seek eviction of a tenant if the period of tenancy has expired; the tenant has failed to pay or tender rent within thirty days after the period stipulated in Section 7; the tenant has breached a term or condition of the tenancy agreement; the tenant has violated an obligation under Section 13; the premises are used for a purpose different from that for which they were let; or the tenant has sub-let without the landlord's prior written consent. The eviction petition is filed before the Rent Tribunal, and the tenant cannot defend it unless he obtains leave to contest, applied for within ten days of first appearance with an affidavit; leave is refused unless the application discloses sufficient grounds for recording oral evidence. Courts have ordered eviction where the tenant defaulted in paying rent.",
+    "reference_sources": [
+      "Punjab Rented Premises Act 2009, ss. 15 and 22",
+      "Muhammad Mujahid Fareed v. ADJ (Lahore High Court, 2018)",
+      "Mushtaq Ahmad v. Ishfaq Ahmed (Lahore High Court, 2022)"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "pun-03",
+    "category": "Punjab law: pre-emption",
+    "language": "en",
+    "expect": "answer",
+    "question": "What demands must a pre-emptor make under the Punjab Pre-emption Act 1991?",
+    "reference": "Under Section 13 of the Punjab Pre-emption Act 1991, the right of pre-emption is extinguished unless the pre-emptor makes three demands in order: talb-i-muwathibat, talb-i-ishhad and talb-i-khusumat. Talb-i-muwathibat is the immediate demand, made in the same sitting (majlis) in which he learns of the sale, declaring his intention to pre-empt; any words showing that intention are enough. Talb-i-ishhad is the demand by establishing evidence: as soon as possible and not later than two weeks from the date of knowledge, he must send the vendee a written notice attested by two truthful witnesses by registered post acknowledgement due, or make it before two truthful witnesses where postal facilities are unavailable. Talb-i-khusumat is the demand by filing a suit. To prove talb-i-muwathibat the plaintiff must state the exact date, time and place at which he gained knowledge of the sale.",
+    "reference_sources": [
+      "Punjab Pre-emption Act 1991, s. 13",
+      "Muhammad Anwar v. Atta Ullah (Lahore High Court, 2023)",
+      "Muhammad Akram v. Mst Noor Mai (2018 LHC 3043)"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "roman-01",
+    "category": "Criminal procedure: Roman Urdu question",
+    "language": "roman",
+    "expect": "answer",
+    "question": "Agar police FIR darj karne se inkar kar de to kya kar sakte hain?",
+    "question_en": "What can be done if the police refuse to register an FIR?",
+    "reference": "If the officer in charge of the police station refuses to register an FIR, the aggrieved person should first approach the police officers higher in rank than the SHO, and then may apply under Section 22-A(6) Cr.P.C. to the Ex-Officio Justice of Peace (a Sessions or Additional Sessions Judge), who can direct the police to record the statement of the complainant under Section 154 Cr.P.C. The Justice of Peace must satisfy himself that the higher police officers were approached first. His role is one of vigilance to redress refusal to register reports; he must not conduct a full investigation or act as a prosecutor before the FIR is registered.",
+    "reference_sources": [
+      "Syed Qamber Ali Shah v. Province of Sindh (Supreme Court, 2024)",
+      "Ghulam Sarwar v. JOP (Lahore High Court, 2022)",
+      "Safdar Hayat v. Justice of Peace (Lahore High Court, 2021)"
+    ],
+    "reviewed": false
+  },
+  {
+    "id": "nc-01",
+    "category": "Not covered: topic absent from the collection",
+    "language": "en",
+    "expect": "not_covered",
+    "question": "What does Pakistani law say about privacy violations by camera drones?",
+    "reference": "No statute or judgment in the collection deals with privacy violations by drones, so Justice AI should say the topic is not covered instead of answering from unrelated material.",
+    "reference_sources": [],
+    "reviewed": false
+  }
+]

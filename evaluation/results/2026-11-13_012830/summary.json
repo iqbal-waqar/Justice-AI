@@ -1,0 +1,35 @@
+{
+  "run_id": "2026-11-13_012830",
+  "judge_model": "gpt-4.1-mini",
+  "embedding_model": "text-embedding-3-small",
+  "scored_at": "2026-11-13T01:35:08",
+  "questions": 7,
+  "metrics": {
+    "faithfulness": {
+      "mean": 1.0,
+      "n": 6
+    },
+    "answer_relevancy": {
+      "mean": 0.9235,
+      "n": 6
+    },
+    "context_precision": {
+      "mean": 0.9398,
+      "n": 6
+    },
+    "context_recall": {
+      "mean": 0.9444,
+      "n": 6
+    },
+    "factual_correctness": {
+      "mean": 0.605,
+      "n": 6
+    }
+  },
+  "label": "7 new: federal + Punjab laws",
+  "not_covered": {
+    "passed": 1,
+    "total": 1
+  },
+  "avg_seconds": 10.14
+}

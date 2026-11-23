@@ -1,0 +1,6 @@
+id,category,language,question,Faithfulness,Answer relevancy,Context precision,Context recall,Factual correctness,seconds,passages,errors
+crim-01,Criminal law: bail,en,What are the grounds for pre-arrest bail under Section 498 Cr.P.C.?,1.0,0.9729,1.0,1.0,0.5,12.7,4,
+stat-01,Statute: Pakistan Penal Code,en,What is the punishment for dishonestly issuing a cheque under Section 489-F PPC?,1.0,0.8514,1.0,1.0,0.84,8.19,6,
+fam-01,Family law: khula,en,Does a wife have to return the dower to get khula?,1.0,0.7921,1.0,1.0,0.6,11.39,4,
+stat-02,Statute: contract law,en,"What makes an agreement a contract under Section 10 of the Contract Act, 1872?",1.0,0.8826,1.0,1.0,0.73,11.12,6,
+urdu-01,Criminal law: Urdu question,ur,قتل کے مقدمے میں ایف آئی آر تاخیر سے درج ہونے کا ملزم پر کیا اثر پڑتا ہے؟,1.0,0.7374,1.0,1.0,0.72,11.85,4,

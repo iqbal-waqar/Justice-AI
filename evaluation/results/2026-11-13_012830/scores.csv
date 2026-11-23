@@ -1,0 +1,8 @@
+id,category,language,question,Faithfulness,Answer relevancy,Context precision,Context recall,Factual correctness,seconds,passages,errors
+fed-01,Federal law: Specific Relief Act,en,"What kind of suit can be filed under Section 42 of the Specific Relief Act, 1877?",1.0,0.8801,1.0,1.0,0.67,11.59,6,
+fed-02,Federal law: Civil Procedure Code,en,On what grounds can a decree be challenged under Section 12(2) CPC?,1.0,0.9598,0.6389,1.0,0.5,7.57,4,
+pun-01,Punjab law: women protection,en,What orders can a court pass under the Punjab Protection of Women against Violence Act 2016?,1.0,0.9521,1.0,1.0,0.74,8.29,6,
+pun-02,Punjab law: rent,en,When can a landlord seek eviction of a tenant under the Punjab Rented Premises Act 2009?,1.0,0.9331,1.0,1.0,0.61,8.2,6,
+pun-03,Punjab law: pre-emption,en,What demands must a pre-emptor make under the Punjab Pre-emption Act 1991?,1.0,0.9176,1.0,1.0,0.94,9.83,6,
+roman-01,Criminal procedure: Roman Urdu question,roman,Agar police FIR darj karne se inkar kar de to kya kar sakte hain?,1.0,0.8985,1.0,0.6667,0.17,9.61,4,
+nc-01,Not covered: topic absent from the collection,en,What does Pakistani law say about privacy violations by camera drones?,1.0,,,,,15.9,3,

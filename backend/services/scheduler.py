@@ -1,8 +1,3 @@
-"""
-Background scheduler — checks for upcoming hearings and sends email + WhatsApp reminders.
-Runs every 6 hours. Sends reminders 1 day and 2 days before hearing dates.
-"""
-
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from backend.database.db import SessionLocal
@@ -44,7 +39,8 @@ class SchedulerService:
                     continue
 
                 to_email = user.notification_email or user.email
-                to_phone = user.phone
+                # Per-hearing WhatsApp number wins; profile phone is the fallback.
+                to_phone = hearing.notify_phone or user.phone
 
                 if to_email:
                     notification_service.send_hearing_reminder(

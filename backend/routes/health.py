@@ -1,22 +1,25 @@
-from fastapi import APIRouter
-from backend.schemas import HealthResponse
+from fastapi import APIRouter, Depends
+
+from backend.database.migrations.user import User
+from backend.interactors.auth_interactor import auth_interactor
 from backend.interactors.health_interactor import HealthInteractor
+from backend.schemas import HealthResponse
 
 router = APIRouter()
 interactor = HealthInteractor()
 
+
 @router.get("/health", response_model=HealthResponse)
-async def health_check():
-    """Health endpoint — delegates entirely to the health interactor."""
+def health_check():
     return interactor.check_system_health()
 
+
 @router.get("/cache/stats")
-async def cache_stats():
-    """Get cache statistics."""
+def cache_stats(admin: User = Depends(auth_interactor.require_admin)):
     return interactor.get_cache_status()
 
+
 @router.post("/cache/clear")
-async def cache_clear():
-    """Clear all caches."""
+def cache_clear(admin: User = Depends(auth_interactor.require_admin)):
     interactor.clear_all_caches()
     return {"message": "All caches cleared"}

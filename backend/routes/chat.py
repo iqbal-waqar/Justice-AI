@@ -1,37 +1,15 @@
 import json
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from backend.schemas import ChatRequest, ChatResponse
-from backend.interactors.rag_interactor import RAGInteractor
+from backend.schemas import ChatRequest
 from backend.services.agent import agent_service
+from backend.services.cache import cache_service
 from backend.interactors.auth_interactor import auth_interactor
 from backend.database.migrations.user import User
 
 router = APIRouter()
-interactor = RAGInteractor()
-
-
-@router.post("/chat", response_model=ChatResponse)
-async def chat(
-    request: ChatRequest,
-    current_user: User = Depends(auth_interactor.resolve_current_user),
-):
-    try:
-        return interactor.retrieve_and_generate(
-            query=request.query,
-            conversation_history=request.conversation_history or [],
-            filters=request.filters,
-        )
-    except Exception as e:
-        msg = str(e)
-        lowered = msg.lower()
-        if "rate limit" in lowered or "rate_limit" in lowered or "429" in lowered:
-            raise HTTPException(status_code=503, detail="LLM provider is currently rate-limited. Please retry shortly.")
-        if "timeout" in lowered or "timed out" in lowered:
-            raise HTTPException(status_code=504, detail="Request timed out while generating the legal response. Please retry.")
-        raise HTTPException(status_code=500, detail=f"Agent pipeline error: {msg}")
 
 
 @router.post("/chat/stream")
@@ -39,21 +17,43 @@ async def chat_stream(
     request: ChatRequest,
     current_user: User = Depends(auth_interactor.resolve_current_user),
 ):
-    """Server-Sent Events stream of the answer as it's generated.
+    history = request.conversation_history or []
 
-    Emits JSON events: {type:'token',content}, {type:'final',content},
-    {type:'sources',sources}, {type:'done'}, or {type:'error',message}.
-    """
+    def sse(ev):
+        return f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
     def event_gen():
+        if not history:
+            cached = cache_service.get_cached_answer(request.query, request.cache_filters())
+            if cached:
+                yield sse({"type": "status", "content": "⚡ Found a saved answer to this exact question"})
+                words = cached["answer"].split(" ")
+                for i in range(0, len(words), 12):
+                    yield sse({"type": "token", "content": " ".join(words[i:i + 12]) + (" " if i + 12 < len(words) else "")})
+                yield sse({"type": "final", "content": cached["answer"]})
+                yield sse({"type": "sources", "sources": cached.get("sources", [])})
+                yield sse({"type": "done"})
+                return
+
+        final_answer, sources = "", []
         try:
             for ev in agent_service.stream_agent(
                 query=request.query,
-                conversation_history=request.conversation_history or [],
+                conversation_history=history,
                 filters=request.filters,
+                language=request.language,
             ):
-                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+                if ev.get("type") == "final":
+                    final_answer = ev.get("content", "")
+                elif ev.get("type") == "sources":
+                    sources = ev.get("sources", [])
+                yield sse(ev)
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)[:300]})}\n\n"
+            yield sse({"type": "error", "message": str(e)[:300]})
+            return
+
+        if not history and cache_service.should_cache(final_answer, sources):
+            cache_service.set_cached_answer(request.query, final_answer, sources, request.cache_filters())
 
     return StreamingResponse(
         event_gen(),
@@ -61,6 +61,6 @@ async def chat_stream(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # disable proxy buffering (nginx)
+            "X-Accel-Buffering": "no",
         },
     )

@@ -4,7 +4,16 @@ import bcrypt
 from jose import jwt, JWTError
 import os
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "justice-ai-secret-key-change-in-production-2026")
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip()
+if len(SECRET_KEY) < 32:
+    raise RuntimeError(
+        "JWT_SECRET_KEY must be set in .env (at least 32 characters). Generate one with:\n"
+        "  python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  
 

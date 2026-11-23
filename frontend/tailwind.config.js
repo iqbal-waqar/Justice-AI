@@ -20,6 +20,11 @@ export default {
           900: '#0f172a',
           950: '#030712',
         },
+        // Navy "ink": the structural colour (headers, primary buttons, user bubbles).
+        ink: {
+          50: '#f4f6f9', 100: '#e8ecf2', 200: '#cfd7e3', 300: '#a8b5c8', 400: '#7586a1',
+          500: '#4f6280', 600: '#3a4b67', 700: '#2a3a54', 800: '#1c2a40', 900: '#121d2f', 950: '#0b1220',
+        },
         accent: '#bf953f',
         gold: {
           300: '#e8c986',
@@ -33,19 +38,32 @@ export default {
           100: '#f1f5f9',
           200: '#e2e8f0',
         },
+        // Warm "paper" canvas behind white cards, and the warm hairline used for borders.
+        paper: { 50: '#fdfcfa', 100: '#faf9f6', 200: '#f4f2ed', 300: '#ebe8e1' },
+        line: { DEFAULT: '#e8e5de', strong: '#dcd8cf' },
       },
       fontFamily: {
+        urdu: ['"Noto Nastaliq Urdu"', '"Noto Naskh Arabic"', 'Inter', 'system-ui', 'sans-serif'],
+        naskh: ['"Noto Naskh Arabic"', 'Inter', 'system-ui', 'sans-serif'],
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
         display: ['Sora', 'Inter', 'system-ui', 'sans-serif'],
+        serif: ['"Source Serif 4"', 'Georgia', 'serif'],
       },
       boxShadow: {
         'glow-gold': '0 0 0 1px rgba(212,168,83,0.2), 0 8px 40px -8px rgba(191,149,63,0.45)',
         'glow-indigo': '0 0 0 1px rgba(129,140,248,0.2), 0 8px 40px -8px rgba(99,102,241,0.45)',
         'card': '0 1px 2px rgba(0,0,0,0.3), 0 12px 40px -12px rgba(0,0,0,0.5)',
         'inner-top': 'inset 0 1px 0 0 rgba(255,255,255,0.06)',
+        // Light-theme elevation scale: soft (cards at rest), lift (hover / dropdowns), pop (dialogs).
+        'soft': '0 1px 2px rgba(18,29,47,0.04), 0 1px 3px rgba(18,29,47,0.05)',
+        'lift': '0 2px 4px -2px rgba(18,29,47,0.06), 0 8px 20px -6px rgba(18,29,47,0.12)',
+        'pop': '0 24px 60px -16px rgba(11,18,32,0.35), 0 4px 12px -4px rgba(11,18,32,0.12)',
+        'focus': '0 0 0 4px rgba(191,149,63,0.18)',
       },
       backgroundImage: {
         'gold-gradient': 'linear-gradient(135deg, #e8c986 0%, #d4a853 40%, #bf953f 100%)',
+        'ink-gradient': 'linear-gradient(180deg, #121d2f 0%, #0b1220 100%)',
+        'ink-sheen': 'radial-gradient(120% 60% at 0% 0%, rgba(212,168,83,0.10) 0%, transparent 55%)',
         'aurora': 'radial-gradient(60% 60% at 20% 10%, rgba(99,102,241,0.12) 0%, transparent 60%), radial-gradient(50% 50% at 85% 20%, rgba(191,149,63,0.10) 0%, transparent 60%), radial-gradient(50% 60% at 50% 100%, rgba(139,92,246,0.10) 0%, transparent 60%)',
       },
       animation: {

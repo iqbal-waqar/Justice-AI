@@ -6,7 +6,6 @@ from backend.schemas import MessageCreate, MessageResponse, SessionResponse, Ses
 
 
 class ChatSessionInteractor:
-    # ── serializers (explicit so datetimes become strings safely) ──
     def _to_message(self, m) -> MessageResponse:
         return MessageResponse(
             id=m.id,
@@ -37,7 +36,8 @@ class ChatSessionInteractor:
     def get_sessions(self, user_id: int, db: Session) -> list[SessionResponse]:
         repo = ChatSessionRepository(db)
         sessions = repo.get_user_sessions(user_id)
-        return [self._to_session(item, repo) for item in sessions]
+        result = [self._to_session(item, repo) for item in sessions]
+        return [s for s in result if s.message_count > 0]
 
     def get_session(self, session_id: int, user_id: int, db: Session) -> SessionResponse:
         repo = ChatSessionRepository(db)
@@ -59,7 +59,6 @@ class ChatSessionInteractor:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # Auto-title the session from its first user message.
         if data.role == "user" and (not session.title or session.title == "New Chat"):
             if repo.count_messages(session_id) == 0:
                 repo.update_session(session, {"title": data.content.strip()[:60] or "New Chat"})

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Noto+Nastaliq+Urdu:wght@400;500;600;700&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -8,46 +8,35 @@
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
-    @apply antialiased text-slate-800 bg-primary-950 font-sans;
+    @apply antialiased text-slate-700 bg-paper-100 font-sans;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     position: relative;
   }
   /* Display font for headings — gives the whole app a modern, premium voice */
   h1, h2, h3 { font-family: 'Sora', 'Inter', system-ui, sans-serif; letter-spacing: -0.02em; }
 
-  /* Ambient aurora + grain backdrop, fixed behind everything */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background:
-      radial-gradient(55% 55% at 15% 0%, rgba(99,102,241,0.14) 0%, transparent 60%),
-      radial-gradient(45% 45% at 90% 10%, rgba(191,149,63,0.12) 0%, transparent 60%),
-      radial-gradient(50% 55% at 60% 100%, rgba(139,92,246,0.10) 0%, transparent 60%);
-    animation: auroraShift 18s ease-in-out infinite alternate;
+  ::selection { background: rgba(212,168,83,0.30); color: #121d2f; }
+  /* Page titles across the app use the serif voice of the brand. */
+  .page-title { font-family: 'Source Serif 4', Georgia, serif; letter-spacing: -0.015em; font-weight: 600; }
+  /* Native selects: one look everywhere, with our own chevron (mirrored in RTL). */
+  select:not([multiple]):not([size]) {
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%237586a1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 0.75rem center; background-size: 15px;
+    padding-right: 2.25rem;
   }
-  body::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    opacity: 0.025;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  [dir="rtl"] select:not([multiple]):not([size]) { background-position: left 0.75rem center; padding-right: 0.875rem; padding-left: 2.25rem; }
+  /* Keyboard focus ring for links and buttons; form fields style their own. */
+  a:focus-visible, button:focus-visible, summary:focus-visible, [role="tab"]:focus-visible, [role="radio"]:focus-visible {
+    outline: 2px solid rgba(58,75,103,0.55); outline-offset: 2px;
   }
-  #root { position: relative; z-index: 1; }
-
-  ::selection { background: rgba(212,168,83,0.30); color: #fff; }
-  :focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(212,168,83,0.55); border-radius: 10px; }
 }
 
-/* Custom scrollbar — subtle gold-tinted */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* Custom scrollbar — thin and neutral */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(212,168,83,0.25); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(212,168,83,0.45); }
+::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.28); border-radius: 10px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.5); background-clip: content-box; border: 2px solid transparent; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -55,55 +44,55 @@
 @layer components {
   .text-gradient-gold {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(120deg, #e8c986 0%, #d4a853 45%, #bf953f 100%);
+    background-image: linear-gradient(120deg, #c89a3e 0%, #a67c2e 55%, #845f1f 100%);
   }
   .text-gradient-indigo {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(120deg, #a5b4fc 0%, #818cf8 50%, #a78bfa 100%);
+    background-image: linear-gradient(120deg, #6366f1 0%, #4f46e5 50%, #7c3aed 100%);
   }
   .glass-card {
-    @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08];
-    box-shadow: 0 1px 0 0 rgba(255,255,255,0.05) inset, 0 20px 50px -24px rgba(0,0,0,0.7);
+    @apply bg-white/80 backdrop-blur-xl border border-slate-200;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 16px 40px -20px rgba(15,23,42,0.15);
   }
-  .hairline { @apply border border-white/10; }
+  .hairline { @apply border border-slate-200; }
   /* Animated sheen that sweeps across a button/card on hover */
   .btn-sheen { position: relative; overflow: hidden; }
   .btn-sheen::after {
     content: ''; position: absolute; inset: 0;
-    background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.22) 50%, transparent 70%);
+    background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%);
     transform: translateX(-120%); transition: transform 0.7s ease;
   }
   .btn-sheen:hover::after { transform: translateX(120%); }
   /* Gradient border card */
   .ring-gradient {
     background:
-      linear-gradient(var(--tw-bg, #0b1120), var(--tw-bg, #0b1120)) padding-box,
-      linear-gradient(135deg, rgba(212,168,83,0.5), rgba(99,102,241,0.35)) border-box;
+      linear-gradient(var(--tw-bg, #ffffff), var(--tw-bg, #ffffff)) padding-box,
+      linear-gradient(135deg, rgba(191,149,63,0.45), rgba(99,102,241,0.3)) border-box;
     border: 1px solid transparent;
   }
 }
 
 /* Prose overrides for chat — complement the custom ReactMarkdown components */
-.prose h3 { @apply text-[15px] font-extrabold mt-5 mb-2 pb-1.5 border-b border-slate-100; }
-.prose h4 { @apply text-[13.5px] font-bold mt-4 mb-1.5; }
+.prose h3 { @apply text-[15px] font-extrabold mt-5 mb-2 pb-1.5 border-b border-slate-200 text-slate-900; }
+.prose h4 { @apply text-[13.5px] font-bold mt-4 mb-1.5 text-slate-800; }
 .prose table { @apply text-sm border-collapse w-full my-4; }
-.prose thead { @apply bg-gradient-to-r from-slate-100 to-slate-50 border-b border-slate-200; }
+.prose thead { @apply bg-slate-50 border-b border-slate-200; }
 .prose th { @apply text-left px-4 py-2.5 text-xs font-bold text-slate-500 uppercase tracking-wider; }
 .prose td { @apply px-4 py-2.5 border-t border-slate-100 text-slate-700 text-[13px]; }
 .prose tr { @apply transition-colors; }
-.prose tr:hover { @apply bg-slate-50/50; }
-.prose blockquote { @apply border-l-[3px] border-amber-400/70 bg-amber-50/40 px-4 py-3 my-3 text-[13px] rounded-r-xl not-italic; }
+.prose tr:hover { @apply bg-slate-50/70; }
+.prose blockquote { @apply border-l-[3px] border-gold-500/70 bg-amber-50/70 px-4 py-3 my-3 text-[13px] rounded-r-xl not-italic text-slate-700; }
 .prose ul { @apply my-2 space-y-1; }
 .prose ol { @apply my-2 space-y-1; }
-.prose li { @apply my-0.5 leading-relaxed text-slate-600; }
-.prose p { @apply my-1.5 leading-relaxed; }
-.prose pre { @apply bg-slate-800 text-slate-100 rounded-xl p-4 my-3 text-sm overflow-x-auto; }
-.prose code { @apply bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[12px] font-mono; }
+.prose li { @apply my-0.5 leading-relaxed text-slate-700; }
+.prose p { @apply my-1.5 leading-relaxed text-slate-700; }
+.prose pre { @apply bg-slate-900 text-slate-100 rounded-xl p-4 my-3 text-sm overflow-x-auto; }
+.prose code { @apply bg-slate-100 text-amber-800 px-1.5 py-0.5 rounded text-[12px] font-mono; }
 .prose pre code { @apply bg-transparent text-inherit p-0; }
-.prose hr { @apply my-4 border-slate-200/80; }
-.prose a { @apply text-indigo-600 underline decoration-indigo-300 underline-offset-2 font-medium; }
-.prose a:hover { @apply text-indigo-700; }
-.prose strong { @apply font-bold text-slate-800; }
+.prose hr { @apply my-4 border-slate-200; }
+.prose a { @apply text-ink-700 underline decoration-gold-400 underline-offset-2 font-medium; }
+.prose a:hover { @apply text-ink-900; }
+.prose strong { @apply font-bold text-slate-900; }
 
 /* Smooth page transitions */
 .page-enter { animation: fadeIn 0.3s ease-out; }
@@ -131,8 +120,8 @@
 }
 
 /* Glassmorphism utilities */
-.glass { @apply bg-white/5 backdrop-blur-xl border border-white/10; }
-.glass-light { @apply bg-white/80 backdrop-blur-xl border border-white/20; }
+.glass { @apply bg-white/70 backdrop-blur-xl border border-slate-200; }
+.glass-light { @apply bg-white/80 backdrop-blur-xl border border-slate-200/60; }
 
 /* Homepage particle float animation */
 @keyframes float {
@@ -146,3 +135,80 @@
   0% { transform: translate3d(0,0,0) scale(1); }
   100% { transform: translate3d(0,-3%,0) scale(1.08); }
 }
+
+
+/* ── Urdu (right-to-left, Nastaliq) ─────────────────────────────────────────
+   Applied to any message or input whose text is mostly Urdu script. English
+   runs inside (case names, citations, section numbers) keep their own
+   direction via the browser's bidi algorithm. */
+.urdu-text {
+  direction: rtl;
+  text-align: right;
+  font-family: 'Inter', 'Noto Nastaliq Urdu', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 2.3;
+}
+.urdu-text p, .urdu-text li { line-height: 2.3; }
+.urdu-text ul, .urdu-text ol { padding-left: 0 !important; padding-right: 1.25rem !important; }
+.urdu-text blockquote {
+  border-left: 0 !important;
+  border-right: 3px solid rgba(191,149,63,0.7) !important;
+  border-radius: 0.75rem 0 0 0.75rem !important;
+}
+.urdu-text th, .urdu-text td { text-align: right !important; }
+.urdu-text h3, .urdu-text h4 { font-family: 'Noto Nastaliq Urdu', 'Sora', sans-serif; letter-spacing: 0; line-height: 2.2; }
+.urdu-input { font-family: 'Inter', 'Noto Nastaliq Urdu', system-ui, sans-serif; line-height: 2; }
+
+/* ── Urdu interface (EN / اردو switch) ──────────────────────────────────────
+   When Urdu is chosen, <html lang="ur" dir="rtl">. Reading text (headings,
+   paragraphs, lists) uses Nastaliq; compact controls (buttons, menus, inputs,
+   labels, badges, one-line text) use Naskh, whose shorter letters fit their
+   fixed heights. Inter comes first in each list: it has no Urdu letters, so
+   Urdu falls through to Nastaliq / Naskh while English inside Urdu text (case
+   names, citations) is drawn in Inter. Bidi keeps each run's direction. */
+html[lang="ur"] body {
+  font-family: 'Inter', 'Noto Naskh Arabic', system-ui, sans-serif;
+  font-feature-settings: normal;
+}
+html[lang="ur"] :is(h1, h2, h3, h4, p, li, blockquote, dd) {
+  font-family: 'Inter', 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', system-ui, sans-serif;
+  letter-spacing: 0;
+  line-height: 2.05;
+}
+html[lang="ur"] h2 { line-height: 1.9; }
+html[lang="ur"] h1 { line-height: 2.05; }
+html[lang="ur"] :is(button, input, select, textarea, label, th, td, nav, .truncate) {
+  font-family: 'Inter', 'Noto Naskh Arabic', system-ui, sans-serif;
+  letter-spacing: 0;
+}
+html[lang="ur"] .truncate { line-height: 1.8; }
+html[lang="ur"] :is(.uppercase, .tracking-wider, .tracking-tight, .tracking-wide) { letter-spacing: 0; text-transform: none; }
+/* Small labels above headings: the compact Naskh face at a readable size, so the
+   label never collides with the Nastaliq heading below it. */
+html[lang="ur"] .eyebrow { font-family: 'Inter', 'Noto Naskh Arabic', system-ui, sans-serif; font-size: 14px; line-height: 1.7; }
+/* Numbers, e-mail addresses, case numbers and code stay left-to-right. */
+html[lang="ur"] :is(input[type="email"], input[type="tel"], input[type="number"], input[type="password"], code, pre, .ltr) {
+  direction: ltr;
+}
+html[lang="ur"] input[type="email"], html[lang="ur"] input[type="tel"], html[lang="ur"] input[type="password"] { text-align: right; }
+
+/* ── Public site motion ──────────────────────────────────────────────────────
+   .reveal fades a section in as it scrolls into view; .marquee slides a row of
+   chips slowly (reversed in RTL). Both stop when the visitor prefers less motion. */
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1); }
+.reveal.is-visible { opacity: 1; transform: none; }
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.marquee-track { display: flex; width: max-content; animation: marquee 48s linear infinite; }
+[dir="rtl"] .marquee-track { animation-direction: reverse; }
+.marquee:hover .marquee-track { animation-play-state: paused; }
+.tilt { transform: perspective(1800px) rotateX(5deg); transform-origin: 50% 0; transition: transform .8s cubic-bezier(.2,.7,.2,1); }
+.tilt:hover { transform: perspective(1800px) rotateX(0deg); }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .marquee-track { animation: none; }
+  .tilt, .tilt:hover { transform: none; }
+}
+
+@keyframes showcaseProgress { from { width: 0; } to { width: 100%; } }
+.showcase-progress { animation: showcaseProgress 6s linear forwards; }
+@media (prefers-reduced-motion: reduce) { .showcase-progress { animation: none; width: 100%; } }

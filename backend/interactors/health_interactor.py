@@ -15,8 +15,8 @@ class HealthInteractor:
         except Exception as e:
             qdrant_status = f"error: {str(e)[:80]}"
 
-        groq_key = os.getenv("GROQ_API_KEY", "")
-        llm_status = "configured" if groq_key else "missing_api_key"
+        openai_key = os.getenv("OPENAI_API_KEY", "")
+        llm_status = "configured" if openai_key else "missing_api_key"
 
         overall = "healthy" if qdrant_status == "connected" and llm_status == "configured" else "degraded"
 
