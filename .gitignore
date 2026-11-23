@@ -25,7 +25,7 @@ node_modules/
 frontend/dist/
 
 # ── Data corpus (large; not pushed to GitHub — store via LFS/external) ────────
-data/
+/data/
 
 # ── IDE ───────────────────────────────────────────────────────────────────────
 .idea/
@@ -38,7 +38,7 @@ data/
 *.bin
 *.pt
 *.pth
-models/
+/models/
 .cache/
 
 # ── Logs ─────────────────────────────────────────────────────────────────────
