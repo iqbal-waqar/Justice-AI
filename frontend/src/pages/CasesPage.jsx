@@ -26,7 +26,7 @@ export default function CasesPage() {
         try {
             const [m, c, f] = await Promise.all([apiJson('/api/v1/matters'), apiJson('/api/v1/clients'), apiJson('/api/v1/firm')]);
             setMatters(m); setClients(c); setFirm(f);
-        } catch (e) { setError(e.message); }
+        } catch (e) { setError(t(e.message)); }
     };
     useEffect(() => { load(); }, []);
 
@@ -41,7 +41,7 @@ export default function CasesPage() {
 
     const remove = async (m) => {
         if (!confirm(t('Delete case "{title}"?', { title: m.title }))) return;
-        try { await apiJson(`/api/v1/matters/${m.id}`, { method: 'DELETE' }); await load(); } catch (e) { setError(e.message); }
+        try { await apiJson(`/api/v1/matters/${m.id}`, { method: 'DELETE' }); await load(); } catch (e) { setError(t(e.message)); }
     };
     const closeWizard = () => { setWizard(null); if (params.get('new')) { params.delete('new'); setParams(params, { replace: true }); } };
 

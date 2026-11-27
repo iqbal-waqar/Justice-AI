@@ -385,4 +385,10 @@ export default {
     'The Lahore High Court site is not answering right now. It is often slow; try again in a minute or enter the details manually.': 'لاہور ہائی کورٹ کی سائٹ اس وقت جواب نہیں دے رہی۔ یہ اکثر سست ہوتی ہے؛ ایک منٹ بعد دوبارہ کوشش کریں یا تفصیلات خود درج کریں۔',
     'Cases can only be assigned to members of your firm.': 'مقدمات صرف آپ کی فرم کے ارکان کے سپرد کیے جا سکتے ہیں۔',
     'Choose a client for the case or add a new one.': 'مقدمے کے لیے کلائنٹ منتخب کریں یا نیا شامل کریں۔',
+    'Case not found.': 'مقدمہ نہیں ملا۔',
+    'Client not found.': 'کلائنٹ نہیں ملا۔',
+    'This case has billing records. Close it instead of deleting.': 'اس مقدمے کے بلنگ ریکارڈ موجود ہیں۔ حذف کرنے کے بجائے اسے بند کریں۔',
+    'This case has documents in the vault. Move or delete them first.': 'اس مقدمے کی دستاویزات والٹ میں موجود ہیں۔ پہلے انہیں منتقل یا حذف کریں۔',
+    'This client has billing records, so it cannot be deleted.': 'اس کلائنٹ کے بلنگ ریکارڈ موجود ہیں، اس لیے اسے حذف نہیں کیا جا سکتا۔',
+    'This client has documents in the vault. Move or delete them first.': 'اس کلائنٹ کی دستاویزات والٹ میں موجود ہیں۔ پہلے انہیں منتقل یا حذف کریں۔',
 };

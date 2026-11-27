@@ -32,7 +32,7 @@ export default function ClientsPage() {
             if (!selectedId && c.length) setSelectedId(wanted && c.some(x => x.id === wanted) ? wanted : c[0].id);
             const share = Number(params.get('share'));
             if (share) setShareFor(c.flatMap(x => x.matters).find(m => m.id === share) || null);
-        } catch (e) { setError(e.message); }
+        } catch (e) { setError(t(e.message)); }
     };
     useEffect(() => { load(); }, []);
 
@@ -49,21 +49,21 @@ export default function ClientsPage() {
             const { id, ...body } = clientForm;
             const saved = await apiJson(id ? `/api/v1/clients/${id}` : '/api/v1/clients', { method: id ? 'PUT' : 'POST', body });
             setClientForm(null); await load(); setSelectedId(saved.id);
-        } catch (e) { setError(e.message); } finally { setBusy(false); }
+        } catch (e) { setError(t(e.message)); } finally { setBusy(false); }
     };
     const removeClient = async (c) => {
         if (!confirm(t('Delete client "{name}"? This cannot be undone.', { name: c.name }))) return;
         try { await apiJson(`/api/v1/clients/${c.id}`, { method: 'DELETE' }); setSelectedId(null); await load(); }
-        catch (e) { setError(e.message); }
+        catch (e) { setError(t(e.message)); }
     };
     const removeMatter = async (m) => {
         if (!confirm(t('Delete case "{title}"?', { title: m.title }))) return;
         try { await apiJson(`/api/v1/matters/${m.id}`, { method: 'DELETE' }); await load(); }
-        catch (e) { setError(e.message); }
+        catch (e) { setError(t(e.message)); }
     };
     const statement = async (c) => {
         try { saveBlob(await apiBlob(`/api/v1/billing/statement/${c.id}.pdf`), `Statement-${c.name}.pdf`); }
-        catch (e) { setError(e.message); }
+        catch (e) { setError(t(e.message)); }
     };
 
     const balanceText = (b) => Number(b) > 0 ? t('{amount} due', { amount: formatPKR(b) }) : Number(b) < 0 ? t('{amount} advance', { amount: formatPKR(b) }) : t('Settled');
@@ -246,16 +246,16 @@ function ShareModal({ matter, client, onClose }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [done, setDone] = useState('');
-    const load = () => apiJson(`/api/v1/matters/${matter.id}/shares`).then(setShares).catch(e => setError(e.message));
+    const load = () => apiJson(`/api/v1/matters/${matter.id}/shares`).then(setShares).catch(e => setError(t(e.message)));
     useEffect(() => { load(); }, [matter.id]); // eslint-disable-line react-hooks/exhaustive-deps
     const share = async (e) => {
         e.preventDefault(); setBusy(true); setError(''); setDone('');
         try { await apiJson(`/api/v1/matters/${matter.id}/shares`, { method: 'POST', body: { email: email.trim() } }); setDone(t('Shared. We emailed {email} a link to the client portal.', { email: email.trim() })); await load(); }
-        catch (err) { setError(err.message); } finally { setBusy(false); }
+        catch (err) { setError(t(err.message)); } finally { setBusy(false); }
     };
     const revoke = async (id) => {
         if (!window.confirm(t('Remove this client’s access to the case?'))) return;
-        try { await apiJson(`/api/v1/shares/${id}`, { method: 'DELETE' }); await load(); } catch (err) { setError(err.message); }
+        try { await apiJson(`/api/v1/shares/${id}`, { method: 'DELETE' }); await load(); } catch (err) { setError(t(err.message)); }
     };
     const fmt = (d) => new Date(d).toLocaleDateString(lang === 'ur' ? 'ur-PK' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     return (
