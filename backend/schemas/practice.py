@@ -73,36 +73,87 @@ class ClientUpdate(ClientIn):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
 
 
-class MatterIn(BaseModel):
-    client_id: int
+class CourtRecordFields(BaseModel):
+    """Court details of a case — typed by hand or fetched from the court website."""
+    district: Optional[str] = Field(default=None, max_length=60)
+    court_type: Optional[str] = Field(default=None, max_length=100)
+    judge: Optional[str] = Field(default=None, max_length=300)
+    category: Optional[str] = Field(default=None, max_length=200)
+    stage: Optional[str] = Field(default=None, max_length=200)
+    filed_on: Optional[date] = None
+    next_hearing: Optional[date] = None
+    fir_number: Optional[str] = Field(default=None, max_length=40)
+    fir_year: Optional[str] = Field(default=None, max_length=4)
+    police_station: Optional[str] = Field(default=None, max_length=120)
+    source: Optional[Literal["manual", "punjab_district_portal", "lhc_case_status"]] = None
+    source_url: Optional[str] = Field(default=None, max_length=500)
+    assigned_to: Optional[int] = None
+
+
+class ProceedingIn(BaseModel):
+    date: date
+    stage: Optional[str] = Field(default=None, max_length=200)
+    order: Optional[str] = Field(default=None, max_length=2000)
+
+
+class MatterIn(CourtRecordFields):
+    client_id: Optional[int] = None
+    new_client: Optional[ClientIn] = None          # create the client in the same step
     title: str = Field(..., min_length=1, max_length=300)
     case_number: Optional[str] = Field(default=None, max_length=100)
     court: Optional[str] = Field(default=None, max_length=200)
     status: Literal["open", "closed"] = "open"
     description: Optional[str] = Field(default=None, max_length=5000)
+    proceedings: List[ProceedingIn] = []            # fetched history to file in the case diary
 
 
-class MatterUpdate(BaseModel):
+class MatterUpdate(CourtRecordFields):
     title: Optional[str] = Field(default=None, min_length=1, max_length=300)
     case_number: Optional[str] = Field(default=None, max_length=100)
     court: Optional[str] = Field(default=None, max_length=200)
     status: Optional[Literal["open", "closed"]] = None
     description: Optional[str] = Field(default=None, max_length=5000)
+    proceedings: Optional[List[ProceedingIn]] = None
 
 
-class MatterOut(BaseModel):
+class MatterOut(CourtRecordFields):
     id: int
     client_id: int
+    client_name: Optional[str] = None
     title: str
     case_number: Optional[str]
     court: Optional[str]
     status: str
     description: Optional[str]
+    synced_at: Optional[datetime] = None
+    assigned_to_name: Optional[str] = None
     created_at: datetime
     document_count: int = 0
+    hearing_count: int = 0
 
     class Config:
         from_attributes = True
+
+
+# ── Court lookup (case auto-fill) ──
+class CourtLookupIn(BaseModel):
+    court: Literal["district", "lhc"]
+    case_number: str = Field(..., min_length=1, max_length=60)
+    district_id: Optional[int] = Field(default=None, ge=1, le=36)
+    bench: Optional[Literal["L", "R", "M", "B"]] = None
+
+
+class FirLookupIn(BaseModel):
+    district_id: int = Field(..., ge=1, le=36)
+    fir_number: str = Field(..., min_length=1, max_length=20)
+    fir_year: str = Field(..., min_length=4, max_length=4)
+    police_station_id: Optional[int] = None
+
+
+class CauseListIn(BaseModel):
+    district_id: int = Field(..., ge=1, le=36)
+    court_id: int
+    date: date
 
 
 class ClientOut(BaseModel):

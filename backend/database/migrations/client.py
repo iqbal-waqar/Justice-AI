@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -34,6 +34,23 @@ class Matter(Base):
     court = Column(String(200), nullable=True)
     status = Column(String(20), nullable=False, default="open")
     description = Column(Text, nullable=True)
+
+    # Court record — typed by hand or fetched from the court's website (services/court_lookup.py)
+    district = Column(String(60), nullable=True)
+    court_type = Column(String(100), nullable=True)
+    judge = Column(String(300), nullable=True)
+    category = Column(String(200), nullable=True)
+    stage = Column(String(200), nullable=True)
+    filed_on = Column(Date, nullable=True)            # register / institution date
+    next_hearing = Column(Date, nullable=True)
+    fir_number = Column(String(40), nullable=True)
+    fir_year = Column(String(4), nullable=True)
+    police_station = Column(String(120), nullable=True)
+    source = Column(String(40), nullable=True)        # manual | punjab_district_portal | lhc_case_status
+    source_url = Column(String(500), nullable=True)
+    synced_at = Column(DateTime(timezone=True), nullable=True)
+    assigned_to = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

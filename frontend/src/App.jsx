@@ -12,6 +12,7 @@ import AuthPage from './pages/AuthPage';
 import ProfilePage from './pages/ProfilePage';
 import DocumentsPage from './pages/DocumentsPage';
 import ClientsPage from './pages/ClientsPage';
+import CasesPage from './pages/CasesPage';
 import VaultPage from './pages/VaultPage';
 import BillingPage from './pages/BillingPage';
 import TeamPage from './pages/TeamPage';
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/clients" element={<ClientsPage />} />
+          <Route path="/cases" element={<CasesPage />} />
           <Route path="/vault" element={<VaultPage />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/team" element={<TeamPage />} />

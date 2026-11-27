@@ -19,6 +19,7 @@ from backend.routes.notes import router as notes_router
 from backend.routes.voice import router as voice_router
 from backend.routes.firm import router as firm_router
 from backend.routes.clients import router as clients_router
+from backend.routes.court_lookup import router as court_lookup_router
 from backend.routes.vault import router as vault_router
 from backend.routes.billing import router as billing_router
 from backend.routes.library import router as library_router
@@ -105,6 +106,7 @@ app.include_router(chat_router, prefix="/api/v1", tags=["Chat"])
 app.include_router(voice_router, prefix="/api/v1", tags=["Voice"])
 app.include_router(firm_router, prefix="/api/v1", tags=["Firm & Team"])
 app.include_router(clients_router, prefix="/api/v1", tags=["Clients & Cases"])
+app.include_router(court_lookup_router, prefix="/api/v1", tags=["Court lookup"])
 app.include_router(vault_router, prefix="/api/v1", tags=["Document Vault"])
 app.include_router(billing_router, prefix="/api/v1", tags=["Billing"])
 app.include_router(library_router, prefix="/api/v1", tags=["Law Library"])

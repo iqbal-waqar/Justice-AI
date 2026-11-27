@@ -1,16 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Users, Plus, Search, Phone, Mail, Briefcase, FolderLock, Wallet, Edit3, Trash2, FileDown, ChevronRight, CreditCard, MapPin, Landmark, Hash, FileText, Share2, X, Send, CheckCircle2 } from 'lucide-react';
 import { apiJson, apiBlob, saveBlob, formatPKR, formatDate } from '../api';
 import { PageHeader, Button, Modal, Field, inputClass, textareaClass, Badge, Alert, EmptyState, Card } from '../components/ui';
 import { useI18n } from '../i18n';
+import CaseWizard from '../components/CaseWizard';
 
 const emptyClient = { name: '', phone: '', email: '', cnic: '', address: '', notes: '' };
-const emptyMatter = { title: '', case_number: '', court: '', status: 'open', description: '' };
 const initials = (name) => (name || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
 export default function ClientsPage() {
     const navigate = useNavigate();
+    const [params] = useSearchParams();
     const { t, lang } = useI18n();
     const fmtDate = (d) => (lang === 'ur' && d) ? new Date(d).toLocaleDateString('ur-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : formatDate(d);
     const [clients, setClients] = useState([]);
@@ -19,7 +20,7 @@ export default function ClientsPage() {
     const [selectedId, setSelectedId] = useState(null);
     const [error, setError] = useState('');
     const [clientForm, setClientForm] = useState(null);   // {id?, ...fields}
-    const [matterForm, setMatterForm] = useState(null);   // {id?, client_id, ...fields}
+    const [matterForm, setMatterForm] = useState(null);   // null | {} new case | {...matter} edit
     const [busy, setBusy] = useState(false);
     const [shareFor, setShareFor] = useState(null);     // matter being shared with its client
 
@@ -27,7 +28,10 @@ export default function ClientsPage() {
         try {
             const [c, f] = await Promise.all([apiJson('/api/v1/clients'), apiJson('/api/v1/firm')]);
             setClients(c); setFirm(f);
-            if (!selectedId && c.length) setSelectedId(c[0].id);
+            const wanted = Number(params.get('client'));
+            if (!selectedId && c.length) setSelectedId(wanted && c.some(x => x.id === wanted) ? wanted : c[0].id);
+            const share = Number(params.get('share'));
+            if (share) setShareFor(c.flatMap(x => x.matters).find(m => m.id === share) || null);
         } catch (e) { setError(e.message); }
     };
     useEffect(() => { load(); }, []);
@@ -45,14 +49,6 @@ export default function ClientsPage() {
             const { id, ...body } = clientForm;
             const saved = await apiJson(id ? `/api/v1/clients/${id}` : '/api/v1/clients', { method: id ? 'PUT' : 'POST', body });
             setClientForm(null); await load(); setSelectedId(saved.id);
-        } catch (e) { setError(e.message); } finally { setBusy(false); }
-    };
-    const saveMatter = async () => {
-        setBusy(true); setError('');
-        try {
-            const { id, ...body } = matterForm;
-            await apiJson(id ? `/api/v1/matters/${id}` : '/api/v1/matters', { method: id ? 'PUT' : 'POST', body: id ? { ...body, client_id: undefined } : body });
-            setMatterForm(null); await load();
         } catch (e) { setError(e.message); } finally { setBusy(false); }
     };
     const removeClient = async (c) => {
@@ -182,7 +178,7 @@ export default function ClientsPage() {
                                         {t('Cases')}
                                         <span className="px-2 h-[22px] inline-flex items-center rounded-full bg-paper-200 text-[11.5px] font-semibold text-slate-600 tabular-nums">{selected.matters.length}</span>
                                     </h3>
-                                    <Button variant="secondary" size="sm" icon={Plus} onClick={() => setMatterForm({ ...emptyMatter, client_id: selected.id })}>{t('New case')}</Button>
+                                    <Button variant="secondary" size="sm" icon={Plus} onClick={() => setMatterForm({ client_id: selected.id })}>{t('Add case')}</Button>
                                 </div>
                                 {selected.matters.length === 0 && (
                                     <div className="px-5 py-8 rounded-2xl border border-dashed border-line-strong text-center text-[13.5px] text-slate-500">{t('No cases yet for this client.')}</div>
@@ -206,7 +202,7 @@ export default function ClientsPage() {
                                                 <div className="flex gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity flex-shrink-0">
                                                     <Button size="sm" variant="ghost" icon={Share2} title={t('Share with client')} aria-label={t('Share with client')} onClick={() => setShareFor(m)} />
                                                     <Button size="sm" variant="ghost" icon={FolderLock} title={t('Vault')} aria-label={t('Vault')} onClick={() => navigate(`/vault?client=${selected.id}&matter=${m.id}`)} />
-                                                    <Button size="sm" variant="ghost" icon={Edit3} title={t('Edit')} aria-label={t('Edit')} onClick={() => setMatterForm({ ...emptyMatter, ...Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v ?? ''])) })} />
+                                                    <Button size="sm" variant="ghost" icon={Edit3} title={t('Edit')} aria-label={t('Edit')} onClick={() => setMatterForm(m)} />
                                                     {firm?.can_approve && <Button size="sm" variant="ghost" icon={Trash2} title={t('Delete')} aria-label={t('Delete')} onClick={() => removeMatter(m)} className="hover:!text-red-600 hover:!bg-red-50" />}
                                                 </div>
                                             </div>
@@ -236,25 +232,7 @@ export default function ClientsPage() {
                 </Modal>
             )}
             {shareFor && <ShareModal matter={shareFor} client={selected} onClose={() => setShareFor(null)} />}
-            {matterForm && (
-                <Modal title={matterForm.id ? t('Edit case') : t('New case')} onClose={() => setMatterForm(null)} footer={<>
-                    <Button variant="secondary" onClick={() => setMatterForm(null)}>{t('Cancel')}</Button>
-                    <Button loading={busy} disabled={!matterForm.title.trim()} onClick={saveMatter}>{t('Save')}</Button></>}>
-                    <div className="space-y-4">
-                        <Field label={t('Case title *')}><input autoFocus value={matterForm.title} onChange={e => setMatterForm(f => ({ ...f, title: e.target.value }))} placeholder={t('e.g. Asif v. State — post-arrest bail')} className={inputClass} /></Field>
-                        <div className="grid grid-cols-2 gap-3">
-                            <Field label={t('Case number')}><input value={matterForm.case_number} onChange={e => setMatterForm(f => ({ ...f, case_number: e.target.value }))} className={`${inputClass} ltr`} /></Field>
-                            <Field label={t('Status')}>
-                                <select value={matterForm.status} onChange={e => setMatterForm(f => ({ ...f, status: e.target.value }))} className={inputClass}>
-                                    <option value="open">{t('open')}</option><option value="closed">{t('closed')}</option>
-                                </select>
-                            </Field>
-                        </div>
-                        <Field label={t('Court')}><input value={matterForm.court} onChange={e => setMatterForm(f => ({ ...f, court: e.target.value }))} placeholder={t('e.g. Lahore High Court')} className={inputClass} /></Field>
-                        <Field label={t('Description')}><textarea rows={3} value={matterForm.description} onChange={e => setMatterForm(f => ({ ...f, description: e.target.value }))} className={textareaClass} /></Field>
-                    </div>
-                </Modal>
-            )}
+            {matterForm && <CaseWizard initial={matterForm} clients={clients} firm={firm} onClose={() => setMatterForm(null)} onSaved={async () => { setMatterForm(null); await load(); }} />}
         </div>
     );
 }

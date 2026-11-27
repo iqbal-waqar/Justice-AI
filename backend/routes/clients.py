@@ -36,9 +36,14 @@ def delete_client(client_id: int, ctx: FirmContext = Depends(current_firm), db: 
     return client_interactor.delete_client(ctx, client_id, db)
 
 
+@router.get("/matters", response_model=List[MatterOut])
+def list_matters(ctx: FirmContext = Depends(current_firm), db: Session = Depends(get_db)):
+    return client_interactor.list_matters(ctx, db)
+
+
 @router.post("/matters", response_model=MatterOut)
 def create_matter(body: MatterIn, ctx: FirmContext = Depends(current_firm), db: Session = Depends(get_db)):
-    return client_interactor.create_matter(ctx, body.model_dump(), db)
+    return client_interactor.create_matter(ctx, body.model_dump(exclude_none=True), db)
 
 
 @router.put("/matters/{matter_id}", response_model=MatterOut)

@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Outlet, NavLink, Link, useNavigate } from 'react-router-dom';
 import {
     Home, MessageSquare, CalendarDays, ChevronsLeft, ChevronsRight,
-    LogOut, FileUp, Users, FolderLock, Wallet, UsersRound, Library
-} from 'lucide-react';
+    LogOut, FileUp, Users, FolderLock, Wallet, UsersRound, Library, Briefcase } from 'lucide-react';
 
 import { clearSession, profilePictureUrl } from '../api';
 import Logo from './Logo';
@@ -57,7 +56,8 @@ export default function Layout() {
         {
             title: t('Practice'), items: [
                 { to: '/diary', icon: CalendarDays, label: t('Case diary') },
-                { to: '/clients', icon: Users, label: t('Clients & cases') },
+                { to: '/cases', icon: Briefcase, label: t('Cases') },
+                { to: '/clients', icon: Users, label: t('Clients') },
                 { to: '/vault', icon: FolderLock, label: t('Document vault') },
                 { to: '/billing', icon: Wallet, label: t('Billing') },
                 { to: '/team', icon: UsersRound, label: t('Team') },
