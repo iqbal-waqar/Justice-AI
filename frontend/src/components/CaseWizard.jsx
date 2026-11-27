@@ -79,7 +79,7 @@ export default function CaseWizard({ initial, clients, firm, onClose, onSaved })
                 ? { court: 'district', case_number: form.case_number.trim(), district_id: districtId(form.district) }
                 : { court: 'lhc', case_number: form.case_number.trim(), bench: (LHC_BENCHES.find(b => b.name === form.bench) || LHC_BENCHES[0]).code };
             applyRecord(await apiJson('/api/v1/court-lookup/case', { method: 'POST', body }));
-        } catch (e) { setFetchError(e.message); } finally { setFetching(false); }
+        } catch (e) { setFetchError(t(e.message)); } finally { setFetching(false); }
     };
 
     /* ── save ── */
@@ -110,7 +110,7 @@ export default function CaseWizard({ initial, clients, firm, onClose, onSaved })
             }
             const saved = await apiJson(editing ? `/api/v1/matters/${initial.id}` : '/api/v1/matters', { method: editing ? 'PUT' : 'POST', body });
             onSaved?.(saved);
-        } catch (e) { setError(e.message); } finally { setSaving(false); }
+        } catch (e) { setError(t(e.message)); } finally { setSaving(false); }
     };
 
     const members = firm?.members || [];
@@ -451,18 +451,18 @@ function CauseListSheet({ district, courtType, onPick, onClose }) {
     const [list, setList] = useState(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
-    useEffect(() => { setJudges(null); apiJson(`/api/v1/court-lookup/judges?district_id=${did}`).then(r => setJudges(r.judges)).catch(e => setError(e.message)); }, [did]);
+    useEffect(() => { setJudges(null); apiJson(`/api/v1/court-lookup/judges?district_id=${did}`).then(r => setJudges(r.judges)).catch(e => setError(t(e.message))); }, [did]);
     const openJudge = async (j, on = date) => {
         setJudge(j); setList(null); setBusy(true); setError('');
         try { setList(await apiJson('/api/v1/court-lookup/cause-list', { method: 'POST', body: { district_id: did, court_id: j.court_id, date: on } })); }
-        catch (e) { setError(e.message); } finally { setBusy(false); }
+        catch (e) { setError(t(e.message)); } finally { setBusy(false); }
     };
     // A new date reloads the same judge's list for that day; before a judge is chosen it only changes the date.
     const changeDate = (on) => { setDate(on); if (judge && on) openJudge(judge, on); };
     const pick = async (c) => {
         setBusy(true); setError('');
         try { onPick(await apiJson('/api/v1/court-lookup/cause-list/pick', { method: 'POST', body: { court: 'district', case_number: c.case_number, district_id: did } })); }
-        catch (e) { setError(e.message); setBusy(false); }
+        catch (e) { setError(t(e.message)); setBusy(false); }
     };
     const fmt = (d) => d ? new Date(d).toLocaleDateString(lang === 'ur' ? 'ur-PK' : 'en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
     const typeRe = TYPE_DESIGNATIONS[courtType];
@@ -527,18 +527,18 @@ function FirSheet({ district, onPick, onClose }) {
     const [results, setResults] = useState(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
-    useEffect(() => { setStations(null); apiJson(`/api/v1/court-lookup/police-stations?district_id=${did}`).then(r => setStations(r.police_stations)).catch(e => setError(e.message)); }, [did]);
+    useEffect(() => { setStations(null); apiJson(`/api/v1/court-lookup/police-stations?district_id=${did}`).then(r => setStations(r.police_stations)).catch(e => setError(t(e.message))); }, [did]);
     const canSearch = /^\d+$/.test(f.fir_number.trim()) && /^\d{4}$/.test(f.fir_year) && f.station;
     const search = async (e) => {
         e.preventDefault(); if (!canSearch) return;
         setBusy(true); setError(''); setResults(null);
         try { setResults((await apiJson('/api/v1/court-lookup/fir', { method: 'POST', body: { district_id: did, fir_number: f.fir_number.trim(), fir_year: f.fir_year, police_station_id: f.station.id } })).results); }
-        catch (err) { setError(err.message); } finally { setBusy(false); }
+        catch (err) { setError(t(err.message)); } finally { setBusy(false); }
     };
     const pick = async (r) => {
         setBusy(true); setError('');
         try { onPick(r.detail_url ? await apiJson(`/api/v1/court-lookup/detail?url=${encodeURIComponent(r.detail_url)}`) : { ...r, source: 'punjab_district_portal' }); }
-        catch (err) { setError(err.message); setBusy(false); }
+        catch (err) { setError(t(err.message)); setBusy(false); }
     };
     const fmt = (d) => d ? new Date(d).toLocaleDateString(lang === 'ur' ? 'ur-PK' : 'en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
     const shown = (stations || []).filter(s => s.name.toLowerCase().includes(q.toLowerCase()));
