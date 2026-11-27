@@ -133,4 +133,11 @@ export default {
     'On file': 'درج ہے',
     'Hearing alerts': 'سماعت کی یاد دہانیاں',
     'Email on': 'ای میل فعال',
+    // ── Daily legal tip settings ──
+    'Daily legal tip': 'روزانہ قانونی نکتہ',
+    'One sourced point of Pakistani law every morning, written from the research library, with a question to ask next.': 'ہر صبح پاکستانی قانون کا ایک مستند نکتہ، ریسرچ لائبریری سے لکھا گیا، ساتھ ایک سوال جو آپ آگے پوچھ سکتے ہیں۔',
+    'By email': 'ای میل کے ذریعے',
+    'By WhatsApp': 'واٹس ایپ کے ذریعے',
+    'Tip language': 'نکتے کی زبان',
+    'Add your phone number above to receive the tip on WhatsApp.': 'واٹس ایپ پر نکتہ پانے کے لیے اوپر اپنا فون نمبر درج کریں۔',
 };

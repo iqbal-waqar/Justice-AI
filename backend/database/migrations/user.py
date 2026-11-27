@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -33,6 +33,12 @@ class User(Base):
     directory_listed = Column(Boolean, default=False, nullable=False, server_default="false")
 
     notification_email = Column(String(255), nullable=True)  
+
+    # Daily legal tip (services/daily_tip.py): channels, language and the last day it went out
+    tip_email = Column(Boolean, default=True, nullable=False, server_default="true")
+    tip_whatsapp = Column(Boolean, default=True, nullable=False, server_default="true")
+    tip_language = Column(String(2), default="en", nullable=False, server_default="en")
+    tip_last_sent_on = Column(Date, nullable=True)
     
     profile_picture = Column(String(500), nullable=True) 
 

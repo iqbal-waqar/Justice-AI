@@ -20,6 +20,9 @@ class UserResponse(BaseModel):
     languages: Optional[str] = None
     directory_listed: bool = False
     directory_complete: bool = False
+    tip_email: bool = True
+    tip_whatsapp: bool = True
+    tip_language: str = 'en'
     class Config:
         from_attributes = True
 
@@ -50,6 +53,9 @@ class ProfileUpdateRequest(BaseModel):
     courts: Optional[str] = None
     languages: Optional[str] = None
     directory_listed: Optional[bool] = None
+    tip_email: Optional[bool] = None
+    tip_whatsapp: Optional[bool] = None
+    tip_language: Optional[str] = None
 
 class TokenResponse(BaseModel):
     access_token: str

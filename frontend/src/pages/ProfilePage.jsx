@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     User, Mail, Phone, MapPin, Briefcase, Shield, Camera,
     Save, LogOut, Bell, Calendar, MessageSquare, Edit3, X,
-    Scale, Award, CheckCircle, Loader2, ChevronRight, Globe
+    Scale, Award, CheckCircle, Loader2, ChevronRight, Globe, Sparkles
 } from 'lucide-react';
 import { LanguageToggle, useI18n } from '../i18n';
 import { Button, Card, CardHeader, inputClass } from '../components/ui';
@@ -24,6 +24,7 @@ export default function ProfilePage() {
         full_name: '', phone: '', city: '',
         bar_council_id: '', specialization: '', notification_email: '',
         bio: '', practice_areas: '', experience_years: '', courts: '', languages: '', directory_listed: false,
+        tip_email: true, tip_whatsapp: true, tip_language: 'en',
     });
 
     const token = localStorage.getItem('justiceai_token');
@@ -48,6 +49,7 @@ export default function ProfilePage() {
                 bio: data.bio || '', practice_areas: data.practice_areas || '',
                 experience_years: data.experience_years ?? '', courts: data.courts || '', languages: data.languages || '',
                 directory_listed: !!data.directory_listed,
+                tip_email: data.tip_email !== false, tip_whatsapp: data.tip_whatsapp !== false, tip_language: data.tip_language || 'en',
             });
             storeUser(data);
         } catch { navigate('/login'); }
@@ -77,6 +79,7 @@ export default function ProfilePage() {
     };
 
     const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
     const update = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
     const initials = user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
@@ -263,6 +266,33 @@ export default function ProfilePage() {
                                 <div className="mt-4 flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-emerald-50/80 ring-1 ring-inset ring-emerald-200/80">
                                     <CheckCircle size={16} className="text-emerald-600 flex-shrink-0 mt-px" />
                                     <p className="text-[12.5px] leading-relaxed text-emerald-800">{t('You’ll get email reminders 1–2 days before hearings')}</p>
+                                </div>
+
+                                <div className="mt-5 pt-5 border-t border-line">
+                                    <div className="flex items-center justify-between gap-3 mb-1">
+                                        <div className="text-[13px] font-semibold text-ink-950 flex items-center gap-1.5"><Sparkles size={14} className="text-gold-600" />{t('Daily legal tip')}</div>
+                                        <span className="text-[11.5px] font-semibold text-slate-500 tabular-nums">10:00 PKT</span>
+                                    </div>
+                                    <p className="text-[12.5px] leading-relaxed text-slate-500 mb-3">{t('One sourced point of Pakistani law every morning, written from the research library, with a question to ask next.')}</p>
+                                    {[['tip_email', Mail, t('By email')], ['tip_whatsapp', Phone, t('By WhatsApp')]].map(([key, Icon, label]) => (
+                                        <label key={key} className={`flex items-center justify-between gap-3 px-3.5 h-11 rounded-xl ring-1 mb-2 ${editing ? 'bg-white ring-line-strong cursor-pointer' : 'bg-paper-100 ring-line'}`}>
+                                            <span className="text-[13.5px] font-medium text-ink-950 flex items-center gap-2"><Icon size={14} className="text-slate-400" />{label}</span>
+                                            <button type="button" role="switch" aria-checked={!!form[key]} disabled={!editing} onClick={() => update(key, !form[key])}
+                                                className={`relative w-11 h-6 rounded-full transition-colors ${form[key] ? 'bg-gold-gradient' : 'bg-slate-300'} disabled:cursor-not-allowed`}>
+                                                <span className={`absolute top-0.5 start-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${form[key] ? 'translate-x-5 rtl:-translate-x-5' : ''}`} />
+                                            </button>
+                                        </label>
+                                    ))}
+                                    <div className="flex items-center justify-between gap-3 px-3.5 h-11 rounded-xl ring-1 ring-line bg-paper-100">
+                                        <span className="text-[13.5px] font-medium text-ink-950">{t('Tip language')}</span>
+                                        <div className="inline-flex items-center gap-1 p-0.5 rounded-lg bg-paper-200 ring-1 ring-inset ring-line">
+                                            {[['en', 'English'], ['ur', 'اردو']].map(([v, l]) => (
+                                                <button key={v} type="button" disabled={!editing} onClick={() => update('tip_language', v)}
+                                                    className={`h-7 px-3 rounded-md text-[12.5px] font-semibold transition-all ${form.tip_language === v ? 'bg-white text-ink-950 shadow-soft ring-1 ring-line' : 'text-slate-500'} disabled:cursor-not-allowed`}>{l}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    {!form.tip_whatsapp || user.phone ? null : <p className="text-[12px] text-amber-700 mt-2">{t('Add your phone number above to receive the tip on WhatsApp.')}</p>}
                                 </div>
                             </div>
                         </Card>

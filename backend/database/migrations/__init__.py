@@ -16,3 +16,4 @@ from backend.database.migrations.portal import CaseShare, ClientLogin
 __all__ = ["Base", "User", "Hearing", "CaseNote", "ChatHistory", "UserDocument", "ChatSession", "ChatMessage",
            "Firm", "FirmMember", "FirmInvitation", "Client", "Matter", "VaultDocument", "VaultAuditLog", "BillingEntry",
            "LibraryResource", "CaseShare", "ClientLogin"]
+from .daily_tip import DailyTip

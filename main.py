@@ -20,6 +20,7 @@ from backend.routes.voice import router as voice_router
 from backend.routes.firm import router as firm_router
 from backend.routes.clients import router as clients_router
 from backend.routes.court_lookup import router as court_lookup_router
+from backend.routes.tips import router as tips_router
 from backend.routes.vault import router as vault_router
 from backend.routes.billing import router as billing_router
 from backend.routes.library import router as library_router
@@ -71,8 +72,14 @@ async def startup_event():
     # Also run once on startup (after 30 seconds delay)
     scheduler.add_job(scheduler_service.check_upcoming_hearings, "date", id="hearing_reminders_startup",
                       run_date=None)  # runs immediately
+    # Daily legal tip, every morning at DAILY_TIP_HOUR Pakistan time (email + WhatsApp)
+    from apscheduler.triggers.cron import CronTrigger
+    from backend.services.daily_tip import daily_tip_service
+    _tip_hour = int(os.getenv("DAILY_TIP_HOUR", "10"))
+    scheduler.add_job(daily_tip_service.send_to_all, CronTrigger(hour=_tip_hour, minute=0, timezone="Asia/Karachi"),
+                      id="daily_legal_tip", misfire_grace_time=3600)
     scheduler.start()
-    print("📧 Hearing reminder scheduler started (runs every 6 hours)")
+    print(f"📧 Hearing reminder scheduler started (runs every 6 hours); daily legal tip at {_tip_hour:02d}:00 PKT")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -107,6 +114,7 @@ app.include_router(voice_router, prefix="/api/v1", tags=["Voice"])
 app.include_router(firm_router, prefix="/api/v1", tags=["Firm & Team"])
 app.include_router(clients_router, prefix="/api/v1", tags=["Clients & Cases"])
 app.include_router(court_lookup_router, prefix="/api/v1", tags=["Court lookup"])
+app.include_router(tips_router, prefix="/api/v1", tags=["Daily legal tip"])
 app.include_router(vault_router, prefix="/api/v1", tags=["Document Vault"])
 app.include_router(billing_router, prefix="/api/v1", tags=["Billing"])
 app.include_router(library_router, prefix="/api/v1", tags=["Law Library"])
